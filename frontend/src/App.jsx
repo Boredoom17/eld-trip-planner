@@ -38,7 +38,8 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const res = await axios.post('http://127.0.0.1:8000/api/plan-trip/', formData)
+      const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+      const res = await axios.post(`${API}/api/plan-trip/`, formData)     
       setTripData(res.data)
       setActiveTab('map')
     } catch (err) {
