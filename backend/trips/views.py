@@ -68,7 +68,7 @@ def reverse_geocode(lat, lng):
         return 'En route'
 
 
-# US state name → 2-letter abbreviation for reverse-geocode display
+# US state name → 2-letter abbreviation 
 STATE_ABBR = {
     'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
     'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
@@ -163,9 +163,7 @@ def get_route(coord1, coord2, api_key):
     """
     Gets real road distance between two coordinates using OpenRouteService.
     Tries HGV profile first (truck-specific routing), falls back to car.
-    Uses miles / 55mph for driving time — FMCSA assumes 55mph average
-    for property-carrying trucks. ORS duration is unreliable for HGV
-    (returns ~43mph effective speed which inflates trip days).
+    Uses miles / 55mph for driving time.
     """
     headers = {'Authorization': api_key, 'Content-Type': 'application/json'}
     body    = {
@@ -187,7 +185,7 @@ def get_route(coord1, coord2, api_key):
             route   = data['routes'][0]
             summary = route.get('summary', {})
 
-            # get distance — ORS sometimes puts it in summary, sometimes segments
+            # get distance
             if 'distance' in summary and summary['distance']:
                 dist_m = summary['distance']
             else:
@@ -196,10 +194,6 @@ def get_route(coord1, coord2, api_key):
 
             # convert meters to miles
             miles = dist_m * 0.000621371
-
-            # FMCSA standard: 55mph average for property-carrying trucks
-            # DO NOT use ORS duration — it returns ~43mph for HGV routes
-            # which makes a 5-day trip appear as 7 days
             hours = miles / 55.0
 
             return {
@@ -285,14 +279,14 @@ def plan_trip_view(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # current → pickup must be different places
+    # current - pickup must be different places
     if coords_too_close(current_coords, pickup_coords):
         return Response(
             {'error': 'Current location and pickup are too close together. The driver needs to travel to pick up the load.'},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # pickup → dropoff must be different places
+    # pickup - dropoff must be different places
     if coords_too_close(pickup_coords, dropoff_coords):
         return Response(
             {'error': 'Pickup and dropoff are the same location. Please enter a different delivery destination.'},
@@ -300,7 +294,6 @@ def plan_trip_view(request):
         )
 
     # NOTE: current == dropoff is intentionally allowed.
-    # Drivers often return to their home terminal after delivering — totally normal.
 
     # get real road routes for both legs
     leg1 = get_route(current_coords, pickup_coords,  ORS_API_KEY)

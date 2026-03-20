@@ -1,19 +1,37 @@
-// ── config ────────────────────────────────────────────────────────────────────
-const CFG = {
-  start:      { icon: '🟢', color: '#69f0ae', label: 'Departure'             },
-  pre_trip:   { icon: '🔧', color: '#ffab40', label: 'Pre-trip Inspection'   },
-  rest_break: { icon: '⏸',  color: '#fff176', label: '30-min Mandatory Break'},
-  fuel:       { icon: '⛽', color: '#80cbc4', label: 'Fuel Stop'             },
-  pickup:     { icon: '📦', color: '#4fc3f7', label: 'Pickup'                },
-  dropoff:    { icon: '✅', color: '#69f0ae', label: 'Delivered'             },
-  cycle_rest: { icon: '⚠️',  color: '#ff5252', label: '34-hr Restart'         },
+const STATUS = {
+  off_duty: { icon: '😴', color: '#8ba0b8', label: 'Off Duty'              },
+  sleeper:  { icon: '🛏',  color: '#ce93d8', label: 'Sleeper Berth'         },
+  driving:  { icon: '🚛', color: '#4fc3f7', label: 'Driving'               },
+  on_duty:  { icon: '⚙️',  color: '#ffab40', label: 'On Duty (Not Driving)' },
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+const EVENTS = {
+  start:      { icon: '🟢', color: '#69f0ae', label: 'Departure',              duration: null,     badge: null                },
+  pre_trip:   { icon: '🔧', color: '#ffab40', label: 'Pre-trip Inspection',    duration: '30 min', badge: 'ON DUTY NOT DRIVING' },
+  rest_break: { icon: '⏸',  color: '#fff176', label: '30-min Mandatory Break', duration: '30 min', badge: 'ON DUTY NOT DRIVING' },
+  fuel:       { icon: '⛽', color: '#80cbc4', label: 'Fuel Stop',              duration: '30 min', badge: 'ON DUTY NOT DRIVING' },
+  pickup:     { icon: '📦', color: '#4fc3f7', label: 'Pickup',                 duration: '1 hr',   badge: null                },
+  dropoff:    { icon: '✅', color: '#69f0ae', label: 'Delivered',              duration: '1 hr',   badge: null                },
+  cycle_rest: { icon: '⚠️',  color: '#ff5252', label: '34-hr Restart',          duration: '34 hr',  badge: null                },
+}
+
 function fmtArrival(dtStr) {
   if (!dtStr) return ''
-  const [, time] = dtStr.split(' ')
-  const [hh, mm] = time.split(':').map(Number)
+  const parts = dtStr.split(' ')
+  if (parts.length < 2) return ''
+  const [hh, mm] = parts[1].split(':').map(Number)
+  const ampm = hh >= 12 ? 'PM' : 'AM'
+  const hr   = hh % 12 || 12
+  return `${hr}:${String(mm).padStart(2, '0')} ${ampm}`
+}
+
+// arrival time + 1hr = when driver actually leaves after loading/unloading
+function fmtDeparture(dtStr) {
+  if (!dtStr) return ''
+  const [date, time] = dtStr.split(' ')
+  const d = new Date(`${date}T${time}`)
+  d.setHours(d.getHours() + 1)
+  const hh = d.getHours(), mm = d.getMinutes()
   const ampm = hh >= 12 ? 'PM' : 'AM'
   const hr   = hh % 12 || 12
   return `${hr}:${String(mm).padStart(2, '0')} ${ampm}`
@@ -21,10 +39,13 @@ function fmtArrival(dtStr) {
 
 function fmtDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString('en-US', {
+    weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
+  })
 }
 
 function fmtHours(h) {
+  if (h < 0.05) return null
   const hrs  = Math.floor(h)
   const mins = Math.round((h - hrs) * 60)
   if (hrs === 0) return `${mins} min`
@@ -32,259 +53,268 @@ function fmtHours(h) {
   return `${hrs} hr ${mins} min`
 }
 
-function arrivalToDecimal(dtStr) {
-  if (!dtStr) return 0
-  const [hh, mm] = dtStr.split(' ')[1].split(':').map(Number)
+function decToTime(h) {
+  const totalMins = Math.round(h * 60)
+  const hours     = Math.floor(totalMins / 60) % 24
+  const mins      = totalMins % 60
+  const ampm      = hours >= 12 ? 'PM' : 'AM'
+  const hr12      = hours % 12 || 12
+  return `${hr12}:${String(mins).padStart(2, '0')} ${ampm}`
+}
+
+function arrivalH(dtStr) {
+  if (!dtStr) return -1
+  const parts = dtStr.split(' ')
+  if (parts.length < 2) return -1
+  const [hh, mm] = parts[1].split(':').map(Number)
   return hh + mm / 60
 }
 
-// ── build per-day event list ──────────────────────────────────────────────────
-function buildDays(stops, days) {
-  // Only truly actionable stops — not rest (shown in summary) or start (shown as header)
-  const KEY_TYPES = new Set(['pre_trip', 'rest_break', 'fuel', 'pickup', 'dropoff', 'cycle_rest'])
+// Every item in the timeline — whether a status block or an event card —
+// renders through this single component so sizing is always identical.
+//
+// variant='status'  
+// variant='event'   - colored border, glowing dot, shows notes/location
+function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, note, variant }) {
+  const isEvent = variant === 'event'
 
-  // find dates that have a cycle_rest event — the following day(s) are continuations
-  const restartDates = new Set(
-    stops
-      .filter(s => s.type === 'cycle_rest')
-      .map(s => s.arrival_time?.split(' ')[0])
-  )
-
-  return days.map((day, di) => {
-    const date = day.date
-
-    // a day is a "full restart" if it has ONLY off_duty all day
-    const isRestart = day.grid?.length === 1 &&
-                      day.grid[0].status === 'off_duty' &&
-                      day.grid[0].end - day.grid[0].start >= 23.9
-
-    // a day is a "restart continuation" if the previous day had cycle_rest
-    // (the restart was already shown as an event card on the previous day)
-    const prevDate = di > 0 ? days[di - 1].date : null
-    const isRestartContinuation = isRestart && prevDate && restartDates.has(prevDate)
-
-    const events = stops
-      .filter(s => KEY_TYPES.has(s.type) && s.arrival_time?.split(' ')[0] === date)
-      .sort((a, b) => arrivalToDecimal(a.arrival_time) - arrivalToDecimal(b.arrival_time))
-
-    const startStop = di === 0 ? stops.find(s => s.type === 'start') : null
-
-    const drivingHrs = (day.grid || [])
-      .filter(s => s.status === 'driving')
-      .reduce((acc, s) => acc + (s.end - s.start), 0)
-
-    const sleeperHrs = (day.grid || [])
-      .filter(s => s.status === 'sleeper' || s.status === 'off_duty')
-      .reduce((acc, s) => acc + (s.end - s.start), 0)
-
-    return {
-      date, label: fmtDate(date), events, startStop,
-      drivingHrs, sleeperHrs,
-      isRestart, isRestartContinuation,
-      dayNum: di + 1,
-    }
-  })
-}
-
-// ── sub-components ────────────────────────────────────────────────────────────
-function DayHeader({ dayNum, label, isRestart }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+    <div style={{
+      display: 'flex', gap: '10px', alignItems: 'stretch',
+      marginBottom: '4px',
+    }}>
+
+      {/* left dot — same vertical position for every row */}
       <div style={{
-        background: isRestart ? '#ff525222' : 'var(--accent)',
-        color:      isRestart ? '#ff5252'   : '#151f2e',
-        border:     isRestart ? '1px solid #ff525255' : 'none',
-        fontFamily: 'var(--font-display)', fontWeight: 700,
-        fontSize: '11px', padding: '4px 14px',
-        borderRadius: '20px', whiteSpace: 'nowrap',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        paddingTop: '14px', flexShrink: 0, width: '14px',
       }}>
-        Day {dayNum}
+        <div style={{
+          width:  isEvent ? 12 : 8,
+          height: isEvent ? 12 : 8,
+          borderRadius: '50%',
+          background: color,
+          opacity: isEvent ? 1 : 0.55,
+          boxShadow: isEvent ? `0 0 6px ${color}55` : 'none',
+          border: isEvent ? '2px solid rgba(255,255,255,0.15)' : 'none',
+          flexShrink: 0,
+        }} />
       </div>
-      <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{label}</div>
-      <div style={{ flex: 1, height: '1px', background: 'var(--navy-border)' }} />
+
+      {/* card body — fixed min-height so all rows are same size */}
+      <div style={{
+        flex: 1,
+        minHeight: '40px',
+        padding: '10px 12px',
+        background: isEvent ? color + '0f' : color + '08',
+        border: `1px solid ${isEvent ? color + '30' : color + '18'}`,
+        borderRadius: '10px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: '10px',
+      }}>
+        {/* left content */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+
+          {/* title row */}
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            gap: '6px', flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: isEvent ? '14px' : '12px', lineHeight: 1, flexShrink: 0 }}>
+              {icon}
+            </span>
+            <span style={{
+              fontWeight: isEvent ? 700 : 500,
+              fontSize: '12px',
+              color: isEvent ? color : 'var(--text-muted)',
+              fontFamily: isEvent ? 'var(--font-display)' : 'var(--font-body)',
+              letterSpacing: isEvent ? '0.01em' : 0,
+            }}>
+              {label}
+            </span>
+            {duration && (
+              <span style={{
+                fontSize: '10px', color: color,
+                background: color + '20',
+                border: `1px solid ${color}30`,
+                padding: '1px 6px', borderRadius: '20px',
+                fontFamily: 'var(--font-display)', fontWeight: 700,
+                flexShrink: 0,
+              }}>
+                {duration}
+              </span>
+            )}
+            {badge && (
+              <span style={{
+                fontSize: '9px', color: '#ffab40',
+                background: '#ffab4012',
+                border: '1px solid #ffab4028',
+                padding: '1px 5px', borderRadius: '20px',
+                fontFamily: 'var(--font-display)', fontWeight: 700,
+                letterSpacing: '0.04em', flexShrink: 0,
+              }}>
+                {badge}
+              </span>
+            )}
+          </div>
+
+          {/* time range — shown for status blocks only */}
+          {timeStr && !isEvent && (
+            <div style={{
+              fontSize: '11px', color: color,
+              marginTop: '3px',
+              fontFamily: 'var(--font-display)', fontWeight: 600,
+              opacity: 0.85,
+            }}>
+              {timeStr}
+            </div>
+          )}
+
+          {/* location + notes — shown for events only */}
+          {isEvent && sublabel && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+              📍 {sublabel}
+            </div>
+          )}
+          {isEvent && note && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.5 }}>
+              {note}
+            </div>
+          )}
+        </div>
+
+        {/* right: arrival time for events, nothing for status blocks */}
+        {isEvent && (
+          <div style={{
+            fontSize: '12px', fontWeight: 600, color: color,
+            fontFamily: 'var(--font-display)', whiteSpace: 'nowrap',
+            flexShrink: 0, paddingTop: '1px',
+          }}>
+            {timeStr}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-function DaySummary({ drivingHrs, sleeperHrs }) {
-  if (drivingHrs < 0.1) return null
+// Day Summary Pills 
+function DaySummary({ grid }) {
+  const drivingH = (grid || []).filter(s => s.status === 'driving')
+    .reduce((a, s) => a + s.end - s.start, 0)
+  const sleeperH = (grid || []).filter(s => s.status === 'sleeper')
+    .reduce((a, s) => a + s.end - s.start, 0)
+
+  if (drivingH < 0.1 && sleeperH < 0.1) return null
+
   return (
-    <div style={{
-      display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap',
-    }}>
-      {drivingHrs > 0 && (
+    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+      {drivingH > 0 && (
         <span style={{
           fontSize: '11px', color: '#4fc3f7',
           background: '#4fc3f718', border: '1px solid #4fc3f728',
           padding: '3px 10px', borderRadius: '20px',
           fontFamily: 'var(--font-display)', fontWeight: 600,
         }}>
-          🚛 {fmtHours(drivingHrs)} driving
+          🚛 {fmtHours(drivingH)} driving
         </span>
       )}
-      {sleeperHrs > 0 && (
+      {sleeperH > 0 && (
         <span style={{
           fontSize: '11px', color: '#ce93d8',
           background: '#ce93d818', border: '1px solid #ce93d828',
           padding: '3px 10px', borderRadius: '20px',
           fontFamily: 'var(--font-display)', fontWeight: 600,
         }}>
-          🛏 {fmtHours(sleeperHrs)} rest
+          🛏 {fmtHours(sleeperH)} sleeper
         </span>
       )}
     </div>
   )
 }
 
-function EventCard({ event }) {
-  const cfg = CFG[event.type]
-  if (!cfg) return null
-
-  const durations = {
-    pre_trip:   '30 min',
-    rest_break: '30 min',
-    fuel:       '30 min',
-    pickup:     '1 hr',
-    dropoff:    '1 hr',
-    rest:       null,
-    cycle_rest: '34 hr',
-    start:      null,
-  }
-  const dur = durations[event.type]
-
-  // badge only for on-duty-not-driving events
-  const showBadge = ['pre_trip', 'rest_break', 'fuel'].includes(event.type)
-
-  return (
-    <div style={{
-      display: 'flex', gap: '14px', alignItems: 'flex-start',
-      marginBottom: '8px',
-    }}>
-      {/* timeline dot */}
-      <div style={{
-        width: '14px', height: '14px', borderRadius: '50%', flexShrink: 0,
-        background: cfg.color, marginTop: '14px',
-        boxShadow: `0 0 8px ${cfg.color}55`,
-        border: '2px solid rgba(255,255,255,0.15)',
-      }} />
-
-      {/* card */}
-      <div style={{
-        flex: 1,
-        background: cfg.color + '10',
-        border: `1px solid ${cfg.color}28`,
-        borderRadius: '10px',
-        padding: '10px 14px',
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-          {/* left: icon + title + badges */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '14px' }}>{cfg.icon}</span>
-              <span style={{
-                fontWeight: 700, fontSize: '13px', color: cfg.color,
-                fontFamily: 'var(--font-display)',
-              }}>
-                {cfg.label}
-              </span>
-              {dur && (
-                <span style={{
-                  fontSize: '10px', color: cfg.color,
-                  background: cfg.color + '20', border: `1px solid ${cfg.color}33`,
-                  padding: '1px 7px', borderRadius: '20px',
-                  fontFamily: 'var(--font-display)', fontWeight: 700,
-                }}>
-                  {dur}
-                </span>
-              )}
-              {showBadge && (
-                <span style={{
-                  fontSize: '9px', color: '#ffab40',
-                  background: '#ffab4015', border: '1px solid #ffab4030',
-                  padding: '1px 6px', borderRadius: '20px',
-                  fontFamily: 'var(--font-display)', fontWeight: 700,
-                  letterSpacing: '0.04em',
-                }}>
-                  ON DUTY NOT DRIVING
-                </span>
-              )}
-            </div>
-
-            {/* location */}
-            {event.location && event.location !== 'En route' && (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                📍 {event.location}
-              </div>
-            )}
-
-            {/* notes */}
-            {event.notes && (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px', lineHeight: 1.5 }}>
-                {event.notes}
-              </div>
-            )}
-          </div>
-
-          {/* right: time */}
-          <div style={{
-            fontSize: '13px', fontWeight: 600, color: cfg.color,
-            fontFamily: 'var(--font-display)', whiteSpace: 'nowrap', flexShrink: 0,
-            paddingTop: '2px',
-          }}>
-            {fmtArrival(event.arrival_time)}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── main component ────────────────────────────────────────────────────────────
+// Main 
 export default function StopsList({ stops, days }) {
-  if (!stops?.length) return null
+  if (!stops?.length || !days?.length) return null
 
-  const timeline = buildDays(stops, days || [])
+  const startStop   = stops.find(s => s.type === 'start')
   const dropoffStop = stops.find(s => s.type === 'dropoff')
+  const dropoffH    = dropoffStop ? arrivalH(dropoffStop.arrival_time) : 25
+  const dropoffDate = dropoffStop?.arrival_time?.split(' ')[0]
 
-  // total key events (excluding start which is implicit)
-  const totalEvents = stops.filter(s => CFG[s.type] && s.type !== 'start').length
+  const namedEvents = stops.filter(s =>
+    ['pre_trip', 'rest_break', 'fuel', 'pickup', 'cycle_rest'].includes(s.type)
+  )
+
+  const totalKeyEvents = stops.filter(s => EVENTS[s.type]).length
 
   return (
-    <div style={{ maxWidth: '560px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
 
-      {/* header */}
       <div style={{
         fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em',
         color: 'var(--text-muted)', marginBottom: '28px',
         fontFamily: 'var(--font-display)',
       }}>
-        FULL TRIP TIMELINE — {timeline.length} DAYS · {totalEvents} KEY EVENTS
+        FULL TRIP TIMELINE — {days.length} DAYS · {totalKeyEvents} KEY EVENTS
       </div>
 
-      {timeline.map((day, di) => {
-        // completely skip days that are just continuation of prior day's restart
-        if (day.isRestartContinuation) return null
+      {days.map((day, di) => {
+        const date      = day.date
+        const isLastDay = di === days.length - 1
+
+        const isAllOffDuty =
+          day.grid?.length === 1 &&
+          day.grid[0].status === 'off_duty' &&
+          day.grid[0].end - day.grid[0].start >= 23.9
+
+        const hasCycleRest     = stops.some(s => s.type === 'cycle_rest' && s.arrival_time?.startsWith(date))
+        const prevHadCycleRest = di > 0 && stops.some(s => s.type === 'cycle_rest' && s.arrival_time?.startsWith(days[di - 1].date))
+        const isRestartDay     = isAllOffDuty && (hasCycleRest || prevHadCycleRest)
+
+        const dayEvents  = namedEvents.filter(s => s.arrival_time?.startsWith(date))
+        const cycleRestH = (() => {
+          const cr = stops.find(s => s.type === 'cycle_rest' && s.arrival_time?.startsWith(date))
+          return cr ? arrivalH(cr.arrival_time) : -1
+        })()
+
+        const gridSegs = (day.grid || []).filter(s => s.end - s.start > 0.04)
 
         return (
-          <div key={di} style={{ marginBottom: '32px' }}>
-            <DayHeader dayNum={day.dayNum} label={day.label} isRestart={day.isRestart && !day.isRestartContinuation} />
+          <div key={di} style={{ marginBottom: '36px' }}>
 
-            {day.isRestart ? (
-              // ── 34-hr restart full day ──────────────────────────────────
+            {/* day header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <div style={{
-                marginLeft: '28px',
+                background: isRestartDay ? '#ff525222' : 'var(--accent)',
+                color:      isRestartDay ? '#ff5252'   : '#151f2e',
+                border:     isRestartDay ? '1px solid #ff525255' : 'none',
+                fontFamily: 'var(--font-display)', fontWeight: 700,
+                fontSize: '11px', padding: '4px 14px',
+                borderRadius: '20px', whiteSpace: 'nowrap',
+              }}>
+                Day {di + 1}
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{fmtDate(date)}</div>
+              <div style={{ flex: 1, height: '1px', background: 'var(--navy-border)' }} />
+            </div>
+
+            {isRestartDay ? (
+              <div style={{
                 background: '#ff525210', border: '1px solid #ff525228',
                 borderRadius: '10px', padding: '14px 16px',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '16px' }}>⚠️</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>⚠️</span>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '13px', color: '#ff5252', fontFamily: 'var(--font-display)' }}>
                         34-hr Restart — Off Duty
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                        Driver fully off duty. Cycle hours reset to 0 upon resuming.
+                        Driver fully off duty. Parked and resting. Cycle hours reset to 0 upon resuming.
                       </div>
                     </div>
                   </div>
@@ -297,33 +327,122 @@ export default function StopsList({ stops, days }) {
                 </div>
               </div>
             ) : (
-              // ── normal day ──────────────────────────────────────────────
               <div>
-                <DaySummary drivingHrs={day.drivingHrs} sleeperHrs={day.sleeperHrs} />
-                <div style={{ position: 'relative', paddingLeft: '28px' }}>
-                  <div style={{
-                    position: 'absolute', left: '6px', top: 0, bottom: 0,
-                    width: '2px', background: 'var(--navy-border)',
-                  }} />
+                <DaySummary grid={day.grid} />
 
-                  {/* Day 1: show departure as first event */}
-                  {day.startStop && (
-                    <EventCard event={day.startStop} />
-                  )}
+                {/* departure — day 1 only */}
+                {di === 0 && startStop && (
+                  <TimelineRow
+                    variant="event"
+                    color={EVENTS.start.color}
+                    icon={EVENTS.start.icon}
+                    label={EVENTS.start.label}
+                    timeStr={fmtArrival(startStop.arrival_time)}
+                    sublabel={startStop.location !== 'En route' ? startStop.location : null}
+                    note={startStop.notes}
+                  />
+                )}
 
-                  {day.events.map((ev, ei) => (
-                    <EventCard key={ei} event={ev} />
-                  ))}
-                </div>
+                {(() => {
+                  const items = []
+
+                  gridSegs.forEach(seg => {
+                    if (di === 0 && seg.status === 'off_duty' && seg.end <= 8.5) return
+                    if (cycleRestH >= 0 && seg.status === 'off_duty' && seg.start >= cycleRestH - 0.1) return
+                    if (isLastDay && date === dropoffDate &&
+                        (seg.status === 'off_duty' || seg.status === 'sleeper' || seg.status === 'on_duty') &&
+                        seg.start >= dropoffH - 0.1) return
+                    items.push({ kind: 'seg', time: seg.start, seg })
+                  })
+
+                  dayEvents.forEach(stop => {
+                    items.push({ kind: 'event', time: arrivalH(stop.arrival_time), stop })
+                  })
+
+                  items.sort((a, b) => a.time - b.time)
+
+                  // build and merge coverage ranges from events
+                  const rawRanges = items
+                    .filter(i => i.kind === 'event')
+                    .map(i => ({ start: i.time - 0.05, end: i.time + 1.1 }))
+                  rawRanges.sort((a, b) => a.start - b.start)
+                  const coveredRanges = []
+                  rawRanges.forEach(r => {
+                    if (coveredRanges.length && r.start <= coveredRanges[coveredRanges.length - 1].end) {
+                      coveredRanges[coveredRanges.length - 1].end = Math.max(coveredRanges[coveredRanges.length - 1].end, r.end)
+                    } else {
+                      coveredRanges.push({ ...r })
+                    }
+                  })
+
+                  const rendered = []
+                  items.forEach((item, idx) => {
+                    if (item.kind === 'seg') {
+                      const { seg } = item
+                      if (seg.status === 'on_duty') {
+                        const covered = coveredRanges.some(r => seg.start >= r.start && seg.end <= r.end)
+                        if (covered) return
+                      }
+                      if (seg.status === 'off_duty' && seg.end - seg.start < 0.1) return
+
+                      const s = STATUS[seg.status]
+                      if (!s) return
+                      rendered.push(
+                        <TimelineRow
+                          key={`seg-${idx}`}
+                          variant="status"
+                          color={s.color}
+                          icon={s.icon}
+                          label={s.label}
+                          timeStr={`${decToTime(seg.start)} → ${decToTime(seg.end)}`}
+                          duration={fmtHours(seg.end - seg.start)}
+                        />
+                      )
+                    } else {
+                      const { stop } = item
+                      const e = EVENTS[stop.type]
+                      if (!e) return
+                      rendered.push(
+                        <TimelineRow
+                          key={`ev-${idx}`}
+                          variant="event"
+                          color={e.color}
+                          icon={e.icon}
+                          label={e.label}
+                          timeStr={fmtArrival(stop.arrival_time)}
+                          duration={e.duration}
+                          badge={e.badge}
+                          sublabel={stop.location && stop.location !== 'En route' ? stop.location : null}
+                          note={stop.notes}
+                        />
+                      )
+                    }
+                  })
+
+                  return rendered
+                })()}
+
+                {/* delivered — last day only */}
+                {isLastDay && dropoffStop && (
+                  <TimelineRow
+                    variant="event"
+                    color={EVENTS.dropoff.color}
+                    icon={EVENTS.dropoff.icon}
+                    label={EVENTS.dropoff.label}
+                    timeStr={fmtArrival(dropoffStop.arrival_time)}
+                    duration={EVENTS.dropoff.duration}
+                    sublabel={dropoffStop.location !== 'En route' ? dropoffStop.location : null}
+                    note={dropoffStop.notes}
+                  />
+                )}
               </div>
             )}
           </div>
         )
       })}
 
-      {/* footer */}
       {dropoffStop && (
-        <div style={{ textAlign: 'center', paddingBottom: '24px' }}>
+        <div style={{ textAlign: 'center', paddingBottom: '28px' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '8px',
             padding: '8px 24px',
@@ -333,7 +452,7 @@ export default function StopsList({ stops, days }) {
             color: '#69f0ae', fontSize: '13px', fontWeight: 600,
             fontFamily: 'var(--font-display)',
           }}>
-            ✅ Trip complete · {fmtArrival(dropoffStop.arrival_time)}
+            ✅ Trip complete · {fmtDeparture(dropoffStop.arrival_time)}
           </div>
         </div>
       )}

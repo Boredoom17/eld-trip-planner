@@ -1,447 +1,615 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
+
+// Dummy datas
+const CARRIER_NAME    = 'Spotter Freight Lines, Inc.'  
+const OFFICE_ADDRESS  = 'Washington, D.C., 20001'
+const DRIVER_NAME     = 'John Doe'
+const CODRIVER_NAME   = '—'
+const VEHICLE_NUMBER  = 'SFL-4872'
+const SHIPPING_NO     = 'SFL-' + Math.floor(100000 + Math.random() * 900000)
 
 const ROWS = [
-  { key: 'off_duty', label: '1. Off Duty',             color: '#2e7d32' },
-  { key: 'sleeper',  label: '2. Sleeper Berth',         color: '#1565c0' },
-  { key: 'driving',  label: '3. Driving',               color: '#b71c1c' },
-  { key: 'on_duty',  label: '4. On Duty\n(Not Driving)', color: '#e65100' },
+  { key: 'off_duty', label: ['1. Off Duty'],                color: '#2e7d32' },
+  { key: 'sleeper',  label: ['2. Sleeper Berth'],           color: '#1565c0' },
+  { key: 'driving',  label: ['3. Driving'],                 color: '#b71c1c' },
+  { key: 'on_duty',  label: ['4. On Duty', '(Not Driving)'],color: '#e65100' },
 ]
 
 const STATUS_TO_ROW = {
-  off_duty: 'off_duty',
-  driving:  'driving',
-  on_duty:  'on_duty',
-  sleeper:  'sleeper',
+  off_duty: 'off_duty', driving: 'driving',
+  on_duty: 'on_duty',   sleeper: 'sleeper',
 }
 
-// converts driver schedule blocks (from ScheduleModal) to grid segments
-function scheduleToSegments(schedule) {
-  if (!schedule || !Array.isArray(schedule) || schedule.length === 0) return null
-  const segs = []
-  schedule.forEach(entry => {
-    if (!entry.start || !entry.end || !entry.status) return
-    const [sh, sm] = entry.start.split(':').map(Number)
-    const [eh, em] = entry.end.split(':').map(Number)
-    const start = sh + sm / 60
-    let   end   = eh + em / 60
-    if (end === 0) end = 24
-    if (end <= start) end = 24
-    if (end > start) segs.push({ status: entry.status, start, end })
-  })
-  return segs.length > 0 ? segs : null
+function fmt(h) {
+  if (!h || h === 0) return '—'
+  const r    = Math.round(h * 4) / 4
+  const hrs  = Math.floor(r)
+  const mins = Math.round((r - hrs) * 60)
+  return `${hrs}.${String(mins).padStart(2, '0')}`
 }
 
-function drawSheet(canvas, day) {
-  // Display in H.MM format (hours.minutes), not decimal:
-  // 4.0h → "4.00", 4.25h → "4.15", 4.5h → "4.30", 4.75h → "4.45"
-  const fmt = h => {
-    const r    = Math.round(h * 4) / 4   // snap to nearest 0.25
-    const hrs  = Math.floor(r)
-    const mins = Math.round((r - hrs) * 60)  // 0, 15, 30, or 45
-    return `${hrs}.${String(mins).padStart(2, '0')}`
+function fmtDateParts(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return {
+    month: String(d.getMonth() + 1).padStart(2, '0'),
+    day:   String(d.getDate()).padStart(2, '0'),
+    year:  d.getFullYear(),
+    full:  d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
   }
-  const ctx = canvas.getContext('2d')
-  const W   = canvas.width
-  const H   = canvas.height
+}
+
+function shortCity(full) {
+  if (!full) return ''
+  const STATE_MAP = {
+    'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
+    'Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA',
+    'Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS',
+    'Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA',
+    'Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT',
+    'Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM',
+    'New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK',
+    'Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC',
+    'South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT',
+    'Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY',
+  }
+  const parts = full.split(',').map(s => s.trim())
+  const city  = parts[0] || ''
+  const abbr  = parts.map(p => STATE_MAP[p]).find(Boolean) || ''
+  return abbr ? `${city}, ${abbr}` : city
+}
+
+// Main canvas draw function 
+function drawSheet(canvas, day, tripInfo) {
+  const ctx  = canvas.getContext('2d')
+  const W    = canvas.width    // 1100
+  const H    = canvas.height   // 720
 
   ctx.clearRect(0, 0, W, H)
 
-  const ML  = 136
-  const MR  = 58
-  const HDR = 50
-  const NHR = 44
-  const MT  = HDR + NHR
-  const RH  = 50
-  const GW  = W - ML - MR
-  const GH  = RH * 4
-
-  // white paper background
+  // Page background 
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, W, H)
 
-  // ── header ─────────────────────────────────────
-  ctx.fillStyle = '#1a2740'
-  ctx.fillRect(0, 0, W, HDR)
+  // Outer border
+  ctx.strokeStyle = '#333'
+  ctx.lineWidth   = 1.5
+  ctx.strokeRect(10, 10, W - 20, H - 20)
 
-  ;['#ff5252', '#69f0ae', '#4fc3f7'].forEach((c, i) => {
-    ctx.beginPath()
-    ctx.arc(16 + i * 16, HDR / 2, 5, 0, Math.PI * 2)
-    ctx.fillStyle = c; ctx.fill()
+  const PAD  = 22   // inner padding from border
+  const CW   = W - PAD * 2   // content width
+
+  // TOP HEADER ROW 
+  // "U.S. DEPARTMENT OF TRANSPORTATION" top-left
+  ctx.fillStyle  = '#333'
+  ctx.font       = '9px Arial, sans-serif'
+  ctx.textAlign  = 'left'
+  ctx.fillText('U.S. DEPARTMENT OF TRANSPORTATION', PAD, 30)
+
+  // "DRIVER'S DAILY LOG" centered
+  ctx.font      = 'bold 15px Arial, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText("DRIVER'S DAILY LOG", W / 2, 28)
+  ctx.font      = '9px Arial, sans-serif'
+  ctx.fillText('(ONE CALENDAR DAY — 24 HOURS)', W / 2, 40)
+
+  // Original/Duplicate top-right
+  ctx.textAlign  = 'right'
+  ctx.font       = '8px Arial, sans-serif'
+  ctx.fillStyle  = '#444'
+  ctx.fillText('ORIGINAL — Submit to carrier within 13 days', W - PAD, 28)
+  ctx.fillText('DUPLICATE — Driver retains possession for eight days', W - PAD, 40)
+
+  // DATE + MILES + VEHICLE ROW 
+  const dateRow = 58
+  const dp      = fmtDateParts(day.date)
+  const dayMiles = Math.round((day.driving_hours || 0) * 55)
+
+  // Date fields
+  ctx.textAlign  = 'left'
+  ctx.fillStyle  = '#111'
+  ctx.font       = 'bold 22px Arial, sans-serif'
+  ctx.fillText(dp.month, PAD, dateRow + 16)
+  ctx.font       = 'bold 22px Arial, sans-serif'
+  ctx.fillText(dp.day, PAD + 40, dateRow + 16)
+  ctx.font       = 'bold 22px Arial, sans-serif'
+  ctx.fillText(dp.year, PAD + 82, dateRow + 16)
+
+  // underlines + labels
+  ;[[PAD, 32, 'MONTH'], [PAD + 40, 32, 'DAY'], [PAD + 82, 52, 'YEAR']].forEach(([x, w, lbl]) => {
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 0.8
+    ctx.beginPath(); ctx.moveTo(x, dateRow + 20); ctx.lineTo(x + w, dateRow + 20); ctx.stroke()
+    ctx.fillStyle = '#666'; ctx.font = '7.5px Arial, sans-serif'; ctx.textAlign = 'left'
+    ctx.fillText(`(${lbl})`, x, dateRow + 29)
   })
 
-  ctx.fillStyle = '#ffffff'
-  ctx.font = 'bold 13px Arial, sans-serif'
-  ctx.textAlign = 'left'
-  ctx.fillText("DRIVER'S DAILY LOG", 64, 20)
+  // Miles center
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#111'
+  ctx.font      = 'bold 22px Arial, sans-serif'
+  ctx.fillText(dayMiles > 0 ? String(dayMiles) : '—', W / 2, dateRow + 16)
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(W / 2 - 60, dateRow + 20); ctx.lineTo(W / 2 + 60, dateRow + 20); ctx.stroke()
+  ctx.fillStyle = '#666'; ctx.font = '7.5px Arial, sans-serif'
+  ctx.fillText('(TOTAL MILES DRIVING TODAY)', W / 2, dateRow + 29)
 
-  ctx.fillStyle = '#8ba0b8'
-  ctx.font = '9.5px Arial, sans-serif'
-  ctx.fillText('U.S. DOT — FMCSA  ·  Original: File at home terminal  ·  Duplicate: Driver retains 8 days', 64, 36)
-
-  ctx.fillStyle = '#4fc3f7'
-  ctx.font = 'bold 13px Arial, sans-serif'
+  // Vehicle number right
   ctx.textAlign = 'right'
-  ctx.fillText(`Day ${day.day_number}`, W - 10, 20)
+  ctx.fillStyle = '#111'
+  ctx.font      = 'bold 18px Arial, sans-serif'
+  ctx.fillText(VEHICLE_NUMBER, W - PAD, dateRow + 16)
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(W - PAD - 120, dateRow + 20); ctx.lineTo(W - PAD, dateRow + 20); ctx.stroke()
+  ctx.fillStyle = '#666'; ctx.font = '7.5px Arial, sans-serif'
+  ctx.fillText('VEHICLE NUMBERS—(SHOW EACH UNIT)', W - PAD, dateRow + 29)
 
-  ctx.fillStyle = '#8ba0b8'
-  ctx.font = '10px Arial, sans-serif'
-  ctx.fillText(formatDate(day.date), W - 10, 36)
+  // Divider line
+  const div1Y = dateRow + 36
+  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.7
+  ctx.beginPath(); ctx.moveTo(PAD, div1Y); ctx.lineTo(W - PAD, div1Y); ctx.stroke()
 
-  // ── hour numbers strip ──────────────────────────
-  ctx.fillStyle = '#f0f4f8'
-  ctx.fillRect(ML, HDR, GW, NHR)
-  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.5
-  ctx.strokeRect(ML, HDR, GW, NHR)
+  // CARRIER / SIGNATURE ROW 
+  const sigRow = div1Y + 6
+  const halfW  = (CW - 20) / 2
 
-  const SLOTS = 96  // 24hrs × 4 (15-min slots)
+  // Certification text centered
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#555'
+  ctx.font      = 'italic 8px Arial, sans-serif'
+  ctx.fillText('I certify that these entries are true and correct', W / 2, sigRow + 8)
 
-  // tick marks
+  // Carrier name left
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#111'
+  ctx.font      = 'bold italic 16px Georgia, serif'
+  ctx.fillText(CARRIER_NAME, PAD, sigRow + 28)
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(PAD, sigRow + 32); ctx.lineTo(PAD + halfW, sigRow + 32); ctx.stroke()
+  ctx.fillStyle = '#666'; ctx.font = '7.5px Arial, sans-serif'
+  ctx.fillText('(NAME OF CARRIER OR CARRIERS)', PAD, sigRow + 40)
+
+  // Driver signature right
+  ctx.textAlign = 'right'
+  ctx.fillStyle = '#111'
+  ctx.font      = 'bold italic 16px Georgia, serif'
+  ctx.fillText(DRIVER_NAME, W - PAD, sigRow + 28)
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(W / 2 + 10, sigRow + 32); ctx.lineTo(W - PAD, sigRow + 32); ctx.stroke()
+  ctx.fillStyle = '#666'; ctx.font = '7.5px Arial, sans-serif'
+  ctx.fillText('(DRIVER\'S SIGNATURE IN FULL)', W - PAD, sigRow + 40)
+
+  // Office address left
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#111'
+  ctx.font      = 'bold italic 14px Georgia, serif'
+  ctx.fillText(OFFICE_ADDRESS, PAD, sigRow + 58)
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(PAD, sigRow + 62); ctx.lineTo(PAD + halfW, sigRow + 62); ctx.stroke()
+  ctx.fillStyle = '#666'; ctx.font = '7.5px Arial, sans-serif'
+  ctx.fillText('(MAIN OFFICE ADDRESS)', PAD, sigRow + 70)
+
+  // Co-driver right
+  ctx.textAlign = 'right'
+  ctx.fillStyle = '#777'
+  ctx.font      = '13px Georgia, serif'
+  ctx.fillText(CODRIVER_NAME, W - PAD, sigRow + 58)
+  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(W / 2 + 10, sigRow + 62); ctx.lineTo(W - PAD - 60, sigRow + 62); ctx.stroke()
+  ctx.fillStyle = '#666'; ctx.font = '7.5px Arial, sans-serif'
+  ctx.fillText('(NAME OF CO-DRIVER)', W - PAD - 60, sigRow + 70)
+
+  // TOTAL HOURS label top-right of grid
+  ctx.textAlign = 'right'
+  ctx.fillStyle = '#333'
+  ctx.font      = 'bold 8px Arial, sans-serif'
+  ctx.fillText('TOTAL', W - PAD, sigRow + 58)
+  ctx.fillText('HOURS', W - PAD, sigRow + 68)
+
+  // GRID AREA 
+  const ML   = PAD + 110   // left margin (row labels)
+  const MR   = 52          // right margin (totals)
+  const GW   = W - PAD - ML - MR - PAD + PAD  // grid width
+  const NHR  = 40          // hour number strip height
+  const RH   = 44          // each row height
+  const GH   = RH * 4
+  const GT   = sigRow + 78 // grid top (after header)
+  const GNT  = GT + NHR    // grid rows top
+
+  // Hour number strip
+  ctx.fillStyle = '#f5f5f5'
+  ctx.fillRect(ML, GT, GW, NHR)
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5
+  ctx.strokeRect(ML, GT, GW, NHR)
+
+  const SLOTS = 96
   for (let s = 0; s <= SLOTS; s++) {
-    const x   = ML + (s / SLOTS) * GW
-    const min = (s % 4) * 15
-    const isH = min === 0
+    const x      = ML + (s / SLOTS) * GW
+    const min    = (s % 4) * 15
+    const isHour = min === 0
     const isHalf = min === 30
-    const h = isH ? 14 : isHalf ? 9 : 5
+    const tH     = isHour ? 12 : isHalf ? 7 : 4
 
-    ctx.beginPath(); ctx.moveTo(x, HDR); ctx.lineTo(x, HDR + h)
-    ctx.strokeStyle = isH ? '#888' : '#bbb'
-    ctx.lineWidth   = isH ? 1 : 0.5; ctx.stroke()
-
-    ctx.beginPath(); ctx.moveTo(x, HDR + NHR); ctx.lineTo(x, HDR + NHR - (isH ? 8 : isHalf ? 5 : 3))
-    ctx.strokeStyle = isH ? '#999' : '#ccc'
-    ctx.lineWidth   = isH ? 1 : 0.5; ctx.stroke()
+    ctx.strokeStyle = isHour ? '#666' : '#ccc'
+    ctx.lineWidth   = isHour ? 0.9 : 0.4
+    ctx.beginPath(); ctx.moveTo(x, GT); ctx.lineTo(x, GT + tH); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(x, GT + NHR); ctx.lineTo(x, GT + NHR - (isHour ? 7 : isHalf ? 4 : 2)); ctx.stroke()
   }
 
-  // hour labels
   ctx.textAlign = 'center'
   for (let h = 0; h <= 24; h++) {
     const x = ML + (h / 24) * GW
     if (h === 0 || h === 24) {
-      ctx.fillStyle = '#444'; ctx.font = 'bold 8.5px Arial, sans-serif'
-      ctx.fillText('Mid-', x, HDR + 22); ctx.fillText('night', x, HDR + 31)
+      ctx.fillStyle = '#333'; ctx.font = 'bold 7.5px Arial, sans-serif'
+      ctx.fillText('Mid-', x, GT + 18); ctx.fillText('night', x, GT + 27)
     } else if (h === 12) {
-      ctx.fillStyle = '#b06000'; ctx.font = 'bold 10px Arial, sans-serif'
-      ctx.fillText('Noon', x, HDR + 28)
+      ctx.fillStyle = '#8B4513'; ctx.font = 'bold 9px Arial, sans-serif'
+      ctx.fillText('Noon', x, GT + 24)
     } else {
-      ctx.fillStyle = '#444'
-      ctx.font = h % 6 === 0 ? 'bold 10px Arial, sans-serif' : '9.5px Arial, sans-serif'
-      ctx.fillText(h > 12 ? h - 12 : h, x, HDR + 28)
+      ctx.fillStyle = '#333'
+      ctx.font = (h % 6 === 0) ? 'bold 9px Arial, sans-serif' : '8.5px Arial, sans-serif'
+      ctx.fillText(h > 12 ? h - 12 : h, x, GT + 24)
     }
   }
+  ctx.fillStyle = '#888'; ctx.font = '7px Arial, sans-serif'
+  ctx.fillText('A.M.', ML + (6  / 24) * GW, GT + NHR - 4)
+  ctx.fillText('P.M.', ML + (18 / 24) * GW, GT + NHR - 4)
 
-  ctx.fillStyle = '#888'; ctx.font = 'bold 8px Arial, sans-serif'
-  ctx.fillText('A.M.', ML + (6  / 24) * GW, HDR + NHR - 3)
-  ctx.fillText('P.M.', ML + (18 / 24) * GW, HDR + NHR - 3)
-
-  // ── grid rows ───────────────────────────────────
+  // Row backgrounds + labels
   ROWS.forEach((row, i) => {
-    const y = MT + i * RH
-
-    ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#f9fbfd'
+    const y = GNT + i * RH
+    ctx.fillStyle = '#ffffff'
     ctx.fillRect(ML, y, GW, RH)
+    ctx.fillStyle = '#fafafa'
+    ctx.fillRect(PAD, y, ML - PAD, RH)
 
-    ctx.fillStyle = '#f0f4f8'
-    ctx.fillRect(0, y, ML, RH)
-
-    // colored left accent
+    // color bar on far left
     ctx.fillStyle = row.color
-    ctx.fillRect(0, y, 4, RH)
+    ctx.fillRect(PAD, y, 4, RH)
 
     // row label
-    const lines = row.label.split('\n')
     ctx.textAlign = 'right'
-    if (lines.length === 2) {
-      ctx.fillStyle = '#222'; ctx.font = 'bold 10px Arial, sans-serif'
-      ctx.fillText(lines[0], ML - 7, y + RH / 2 - 5)
-      ctx.fillStyle = '#555'; ctx.font = '9px Arial, sans-serif'
-      ctx.fillText(lines[1], ML - 7, y + RH / 2 + 7)
+    if (row.label.length === 2) {
+      ctx.fillStyle = '#222'; ctx.font = 'bold 9.5px Arial, sans-serif'
+      ctx.fillText(row.label[0], ML - 8, y + RH / 2 - 4)
+      ctx.fillStyle = '#555'; ctx.font = '8.5px Arial, sans-serif'
+      ctx.fillText(row.label[1], ML - 8, y + RH / 2 + 8)
     } else {
-      ctx.fillStyle = '#222'; ctx.font = 'bold 10px Arial, sans-serif'
-      ctx.fillText(row.label, ML - 7, y + RH / 2 + 4)
+      ctx.fillStyle = '#222'; ctx.font = 'bold 9.5px Arial, sans-serif'
+      ctx.fillText(row.label[0], ML - 8, y + RH / 2 + 4)
     }
 
-    // row divider
-    ctx.beginPath(); ctx.moveTo(0, y + RH); ctx.lineTo(W, y + RH)
-    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.8; ctx.stroke()
+    // row bottom border
+    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.7
+    ctx.beginPath(); ctx.moveTo(PAD, y + RH); ctx.lineTo(W - PAD, y + RH); ctx.stroke()
   })
 
-  ctx.beginPath(); ctx.moveTo(0, MT); ctx.lineTo(W, MT)
-  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.8; ctx.stroke()
+  // Top border of grid rows
+  ctx.strokeStyle = '#999'; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(PAD, GNT); ctx.lineTo(W - PAD, GNT); ctx.stroke()
 
-  // ── vertical lines inside grid ──────────────────
+  // Vertical grid lines
   for (let s = 0; s <= SLOTS; s++) {
-    const x   = ML + (s / SLOTS) * GW
-    const min = (s % 4) * 15
-    const isH = min === 0; const isHalf = min === 30
-
-    ctx.beginPath(); ctx.moveTo(x, MT); ctx.lineTo(x, MT + GH)
-    if (isH) { ctx.strokeStyle = s === 0 || s === 96 ? '#999' : '#ccc'; ctx.lineWidth = 0.7 }
-    else if (isHalf) { ctx.strokeStyle = '#ddd'; ctx.lineWidth = 0.5 }
-    else { ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.3 }
+    const x      = ML + (s / SLOTS) * GW
+    const min    = (s % 4) * 15
+    const isHour = min === 0; const isHalf = min === 30
+    ctx.beginPath(); ctx.moveTo(x, GNT); ctx.lineTo(x, GNT + GH)
+    if (isHour)      { ctx.strokeStyle = s === 0 || s === 96 ? '#888' : '#ccc'; ctx.lineWidth = 0.6 }
+    else if (isHalf) { ctx.strokeStyle = '#ddd'; ctx.lineWidth = 0.4 }
+    else             { ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.25 }
     ctx.stroke()
   }
-
-  // noon highlight
+  // Noon line
   const noonX = ML + (12 / 24) * GW
-  ctx.beginPath(); ctx.moveTo(noonX, MT); ctx.lineTo(noonX, MT + GH)
-  ctx.strokeStyle = '#b0600033'; ctx.lineWidth = 1.5; ctx.stroke()
+  ctx.strokeStyle = '#8B451322'; ctx.lineWidth = 1.2
+  ctx.beginPath(); ctx.moveTo(noonX, GNT); ctx.lineTo(noonX, GNT + GH); ctx.stroke()
 
-  // outer grid border
-  ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1.2
-  ctx.strokeRect(ML, MT, GW, GH)
+  // Grid outer border
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1
+  ctx.strokeRect(ML, GNT, GW, GH)
 
-  // ── choose segments: driver schedule > calculated grid ──
-  let rawSegments = null
+  // Draw activity segments 
+  const segments = (day.grid || [])
+    .map(s => ({ status: s.status, start: s.start ?? s.start_hour, end: s.end ?? s.end_hour }))
+    .filter(s => STATUS_TO_ROW[s.status] && s.end > s.start)
 
-  // if driver entered a schedule, prefer that for drawing
-  if (day.driver_schedule && Array.isArray(day.driver_schedule)) {
-    rawSegments = scheduleToSegments(day.driver_schedule)
-  }
-  // fall back to calculated grid
-  if (!rawSegments) {
-    rawSegments = day.grid
+  const rowMidY = key => {
+    const ri = ROWS.findIndex(r => r.key === key)
+    return GNT + ri * RH + RH / 2
   }
 
-  if (!rawSegments || rawSegments.length === 0) return
-
-  // normalize: grid uses 'start'/'end', events use 'start_hour'/'end_hour'
-  const segments = rawSegments.map(s => ({
-    status: s.status,
-    start:  s.start  !== undefined ? s.start  : s.start_hour,
-    end:    s.end    !== undefined ? s.end    : s.end_hour,
-  })).filter(s => STATUS_TO_ROW[s.status] && s.end > s.start)
-
-  if (segments.length === 0) return
-
-  const rowMidY = (rowKey) => {
-    const ri = ROWS.findIndex(r => r.key === rowKey)
-    return MT + ri * RH + RH / 2
-  }
-
-  // pass 1 — colored fills
+  // Colored fill
   segments.forEach(seg => {
-    const rowKey = STATUS_TO_ROW[seg.status]
-    if (!rowKey) return
-    const ri  = ROWS.findIndex(r => r.key === rowKey)
-    const row = ROWS[ri]
+    const key = STATUS_TO_ROW[seg.status]; if (!key) return
+    const ri  = ROWS.findIndex(r => r.key === key)
+    const col = ROWS[ri].color
     const x1  = ML + (seg.start / 24) * GW
     const x2  = ML + (seg.end   / 24) * GW
-    const y   = MT + ri * RH
-    ctx.fillStyle = row.color + '28'
-    ctx.fillRect(x1, y + 1, x2 - x1, RH - 2)
+    ctx.fillStyle = col + '22'
+    ctx.fillRect(x1, GNT + ri * RH + 1, x2 - x1, RH - 2)
   })
 
-  // pass 2 — thick black connected step line (exactly like real FMCSA form)
-  ctx.strokeStyle = '#111111'
-  ctx.lineWidth   = 2.8
-  ctx.lineJoin    = 'miter'
-  ctx.lineCap     = 'square'
+  // Step line
+  ctx.strokeStyle = '#0000dd'; ctx.lineWidth = 2.2
+  ctx.lineJoin = 'miter'; ctx.lineCap = 'square'
   ctx.beginPath()
-
   segments.forEach((seg, i) => {
-    const rowKey = STATUS_TO_ROW[seg.status]
-    const x1     = ML + (seg.start / 24) * GW
-    const x2     = ML + (seg.end   / 24) * GW
-    const y      = rowMidY(rowKey)
-    if (i === 0) { ctx.moveTo(x1, y) } else { ctx.lineTo(x1, y) }
+    const key = STATUS_TO_ROW[seg.status]
+    const x1  = ML + (seg.start / 24) * GW
+    const x2  = ML + (seg.end   / 24) * GW
+    const y   = rowMidY(key)
+    if (i === 0) ctx.moveTo(x1, y); else ctx.lineTo(x1, y)
     ctx.lineTo(x2, y)
   })
   ctx.stroke()
 
-  // red dots at every transition
-  ctx.fillStyle = '#cc0000'
-  const dot = (x, y) => {
-    ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill()
-  }
+  // Transition dots
+  ctx.fillStyle = '#0000cc'
+  const dot = (x, y) => { ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill() }
   segments.forEach((seg, i) => {
-    const rowKey = STATUS_TO_ROW[seg.status]
-    const x1     = ML + (seg.start / 24) * GW
-    const x2     = ML + (seg.end   / 24) * GW
-    const y      = rowMidY(rowKey)
-
-    // dot at start of this segment
+    const key = STATUS_TO_ROW[seg.status]
+    const x1  = ML + (seg.start / 24) * GW
+    const x2  = ML + (seg.end   / 24) * GW
+    const y   = rowMidY(key)
     dot(x1, y)
-
-    // if previous segment was a different row, also dot at the PREVIOUS row's y
-    // this marks both ends of the vertical drop line
-    if (i > 0) {
-      const prevRowKey = STATUS_TO_ROW[segments[i-1].status]
-      if (prevRowKey !== rowKey) {
-        dot(x1, rowMidY(prevRowKey))
-      }
-    }
-
-    // dot at end of last segment
-    if (i === segments.length - 1) {
-      dot(x2, y)
-    }
+    if (i > 0 && STATUS_TO_ROW[segments[i-1].status] !== key)
+      dot(x1, rowMidY(STATUS_TO_ROW[segments[i-1].status]))
+    if (i === segments.length - 1) dot(x2, y)
   })
 
-  // ── compute totals from drawn segments (used by both totals column AND remarks) ──
+  // Totals column 
   const totals = { off_duty: 0, sleeper: 0, driving: 0, on_duty: 0 }
   segments.forEach(seg => {
-    const rk = STATUS_TO_ROW[seg.status]
-    if (rk) totals[rk] += (seg.end - seg.start)
+    const k = STATUS_TO_ROW[seg.status]; if (k) totals[k] += seg.end - seg.start
   })
-  // snap each total to nearest 0.25
   Object.keys(totals).forEach(k => { totals[k] = Math.round(totals[k] * 4) / 4 })
 
-  // totals column
-  ctx.fillStyle = '#f0f4f8'
-  ctx.fillRect(ML + GW, MT, MR, GH)
-  ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1
-  ctx.strokeRect(ML + GW, MT, MR, GH)
-
-  ctx.fillStyle = '#333'; ctx.font = 'bold 8px Arial, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.fillText('TOTAL', ML + GW + MR / 2, MT - 18)
-  ctx.fillText('HOURS', ML + GW + MR / 2, MT - 8)
+  const TX = ML + GW   // totals column left
+  ctx.fillStyle = '#f5f5f5'
+  ctx.fillRect(TX, GNT, MR, GH)
+  ctx.strokeStyle = '#aaa'; ctx.lineWidth = 0.8
+  ctx.strokeRect(TX, GNT, MR, GH)
 
   ROWS.forEach((row, i) => {
-    const cy  = MT + i * RH + RH / 2 + 5
+    const cy  = GNT + i * RH + RH / 2 + 5
     const val = totals[row.key] || 0
     if (i > 0) {
-      ctx.beginPath(); ctx.moveTo(ML + GW, MT + i * RH); ctx.lineTo(ML + GW + MR, MT + i * RH)
-      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.8; ctx.stroke()
+      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.6
+      ctx.beginPath(); ctx.moveTo(TX, GNT + i * RH); ctx.lineTo(TX + MR, GNT + i * RH); ctx.stroke()
     }
-    ctx.fillStyle = '#111'; ctx.font = 'bold 13px Arial, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(fmt(val), ML + GW + MR / 2, cy)
+    ctx.fillStyle  = val === 0 ? '#aaa' : '#111'
+    ctx.font       = 'bold 12px Arial, sans-serif'
+    ctx.textAlign  = 'center'
+    ctx.fillText(fmt(val), TX + MR / 2, cy)
   })
 
-  // ── remarks ─────────────────────────────────────
-  const remY = MT + GH + 1
-  const remH = 34
+  // REMARKS section 
+  const remY = GNT + GH + 2
+  const remH = 88
 
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, remY, W, remH)
-  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5; ctx.strokeRect(0, remY, W, remH)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(PAD, remY, CW, remH)
+  ctx.strokeStyle = '#aaa'; ctx.lineWidth = 0.7
+  ctx.strokeRect(PAD, remY, CW, remH)
 
-  ctx.fillStyle = '#333'; ctx.font = 'bold 9.5px Arial, sans-serif'
-  ctx.textAlign = 'left'
-  ctx.fillText('REMARKS:', 10, remY + 13)
-
-  // Use segment-computed totals (not backend day.off_duty_hours which incorrectly
-  // lumps sleeper berth into off duty)
-  ctx.fillStyle = '#555'; ctx.font = '9.5px Arial, sans-serif'
-  const sleeperPart = totals.sleeper > 0 ? `  ·  Sleeper: ${fmt(totals.sleeper)}h` : ''
-  ctx.fillText(
-    `Driving: ${fmt(totals.driving)}h  ·  On Duty (Not Drv.): ${fmt(totals.on_duty)}h  ·  Off Duty: ${fmt(totals.off_duty)}h${sleeperPart}  ·  Cycle used: ${day.cycle_hours_used} / 70 hrs`,
-    78, remY + 13
-  )
-
-  ctx.beginPath(); ctx.moveTo(10, remY + 20); ctx.lineTo(W - 10, remY + 20)
-  ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5; ctx.stroke()
-
-  // ── 70-hr cycle bar ─────────────────────────────
-  const barSecY = remY + remH
-
-  ctx.fillStyle = '#f8f9fa'; ctx.fillRect(0, barSecY, W, H - barSecY)
-  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5; ctx.strokeRect(0, barSecY, W, H - barSecY)
-
-  const BX   = ML
-  const BW   = GW
-  const barY = barSecY + 8
-  const pct  = Math.min(day.cycle_hours_used / 70, 1)
-  const barC = pct > 0.85 ? '#c62828' : pct > 0.6 ? '#e65100' : '#2e7d32'
-
-  ctx.fillStyle = '#333'; ctx.font = 'bold 8.5px Arial, sans-serif'
-  ctx.textAlign = 'left'
-  ctx.fillText('70-HOUR / 8-DAY CYCLE:', BX, barY - 1)
-
-  ctx.fillStyle = '#e0e0e0'
-  ctx.beginPath(); ctx.roundRect(BX, barY + 2, BW, 9, 4); ctx.fill()
-
-  if (pct > 0) {
-    ctx.fillStyle = barC
-    ctx.beginPath(); ctx.roundRect(BX, barY + 2, BW * pct, 9, 4); ctx.fill()
+  // Second hour ruler inside remarks (matches PDF exactly)
+  ctx.fillStyle = '#f5f5f5'
+  ctx.fillRect(ML, remY, GW, 22)
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.4
+  ctx.strokeRect(ML, remY, GW, 22)
+  for (let s = 0; s <= SLOTS; s++) {
+    const x = ML + (s / SLOTS) * GW
+    const min = (s % 4) * 15
+    const isHour = min === 0; const isHalf = min === 30
+    ctx.strokeStyle = isHour ? '#999' : '#ddd'
+    ctx.lineWidth   = isHour ? 0.6 : 0.3
+    ctx.beginPath(); ctx.moveTo(x, remY); ctx.lineTo(x, remY + (isHour ? 10 : isHalf ? 6 : 3)); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(x, remY + 22); ctx.lineTo(x, remY + 22 - (isHour ? 10 : isHalf ? 6 : 3)); ctx.stroke()
+  }
+  ctx.textAlign = 'center'; ctx.fillStyle = '#555'; ctx.font = '7.5px Arial, sans-serif'
+  for (let h = 0; h <= 24; h++) {
+    const x = ML + (h / 24) * GW
+    if (h === 0 || h === 24) { ctx.fillText('Mid-', x, remY + 10); ctx.fillText('night', x, remY + 17) }
+    else if (h === 12) { ctx.fillStyle = '#8B4513'; ctx.fillText('Noon', x, remY + 14); ctx.fillStyle = '#555' }
+    else ctx.fillText(h > 12 ? h - 12 : h, x, remY + 14)
   }
 
-  ;[60 / 70, 1].forEach(p => {
-    const mx = BX + BW * p
-    ctx.strokeStyle = '#c62828'; ctx.lineWidth = 1
-    ctx.setLineDash([3, 2])
-    ctx.beginPath(); ctx.moveTo(mx, barY); ctx.lineTo(mx, barY + 13); ctx.stroke()
+  // REMARKS label
+  ctx.textAlign = 'left'; ctx.fillStyle = '#333'; ctx.font = 'bold 9px Arial, sans-serif'
+  ctx.fillText('REMARKS', PAD + 4, remY + 34)
+
+  // Vertical lines for duty-change annotations (at each status change time)
+  const changeHours = []
+  segments.forEach((seg, i) => {
+    if (i === 0) changeHours.push(seg.start)
+    if (i < segments.length - 1 && STATUS_TO_ROW[seg.status] !== STATUS_TO_ROW[segments[i+1].status])
+      changeHours.push(seg.end)
+  })
+  changeHours.forEach(h => {
+    const x = ML + (h / 24) * GW
+    ctx.strokeStyle = '#999'; ctx.lineWidth = 0.5; ctx.setLineDash([2, 2])
+    ctx.beginPath(); ctx.moveTo(x, remY + 22); ctx.lineTo(x, remY + remH - 4); ctx.stroke()
     ctx.setLineDash([])
   })
 
-  ctx.fillStyle = barC; ctx.font = 'bold 8.5px Arial, sans-serif'
-  ctx.textAlign = 'right'
-  ctx.fillText(`${Math.round(pct * 100)}%  (${day.cycle_hours_used} / 70 hrs)`, BX + BW, barY - 1)
+  // Remarks text — from/to route
+  const from = shortCity(tripInfo?.from || '')
+  const to   = shortCity(tripInfo?.to || '')
+  ctx.fillStyle = '#444'; ctx.font = '8.5px Arial, sans-serif'
+  ctx.fillText(`${from || 'Origin'}  →  ${to || 'Destination'}`, ML, remY + 36)
+
+  // Duty summary line
+  const summary = `Driving: ${fmt(totals.driving)}h   On Duty (Not Drv.): ${fmt(totals.on_duty)}h   Off Duty: ${fmt(totals.off_duty)}h   Sleeper: ${fmt(totals.sleeper)}h`
+  ctx.fillStyle = '#555'; ctx.font = '8px Arial, sans-serif'
+  ctx.fillText(summary, ML, remY + 50)
+
+  // Cycle used
+  ctx.fillText(`Cycle used: ${day.cycle_hours_used} / 70 hrs  ·  Day ${day.day_number} of trip`, ML, remY + 64)
+
+  // =24 total right side
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#111'; ctx.font = 'bold 13px Arial, sans-serif'
+  ctx.fillText('=24', TX + MR / 2, remY + remH / 2 + 6)
+  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.6
+  ctx.strokeRect(TX, remY, MR, remH)
+
+  // Pro/Shipping No
+  ctx.textAlign = 'left'; ctx.fillStyle = '#444'; ctx.font = '8px Arial, sans-serif'
+  ctx.fillText('Pro or Shipping No.', PAD + 4, remY + remH - 12)
+  ctx.fillStyle = '#111'; ctx.font = 'bold 11px Arial, sans-serif'
+  ctx.fillText(SHIPPING_NO, PAD + 90, remY + remH - 12)
+
+  // 70-hr cycle bar 
+  const barY = remY + remH + 6
+  const pct  = Math.min(day.cycle_hours_used / 70, 1)
+  const barC = pct > 0.85 ? '#c62828' : pct > 0.6 ? '#e65100' : '#2e7d32'
+
+  ctx.fillStyle = '#333'; ctx.font = 'bold 8px Arial, sans-serif'; ctx.textAlign = 'left'
+  ctx.fillText('70-HOUR / 8-DAY CYCLE:', ML, barY + 9)
+
+  ctx.fillStyle = '#e0e0e0'
+  ctx.beginPath(); ctx.roundRect(ML + 130, barY + 1, GW - 130, 10, 3); ctx.fill()
+  if (pct > 0) {
+    ctx.fillStyle = barC
+    ctx.beginPath(); ctx.roundRect(ML + 130, barY + 1, (GW - 130) * pct, 10, 3); ctx.fill()
+  }
+  ctx.fillStyle = barC; ctx.font = 'bold 8px Arial, sans-serif'; ctx.textAlign = 'right'
+  ctx.fillText(`${Math.round(pct * 100)}%  (${day.cycle_hours_used} / 70 hrs)`, TX + MR, barY + 9)
 }
 
-function formatDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
-  })
-}
+// Single page component 
+function LogPage({ day, tripInfo, onCanvas }) {
+  const canvasRef = useRef(null)
 
-function DayLog({ day }) {
-  const ref = useRef(null)
   useEffect(() => {
-    if (ref.current) drawSheet(ref.current, day)
-  }, [day])
+    if (canvasRef.current) {
+      drawSheet(canvasRef.current, day, tripInfo)
+      if (onCanvas) onCanvas(canvasRef.current)
+    }
+  }, [day, tripInfo])
+
+  const dp = fmtDateParts(day.date)
 
   return (
     <div style={{
-      borderRadius: '6px', overflow: 'hidden',
-      marginBottom: '28px',
-      boxShadow: '0 2px 20px rgba(0,0,0,0.2)',
-      border: '1px solid var(--navy-border)',
+      width: '100%',
+      maxWidth: '960px',
+      margin: '0 auto 48px',
+      background: '#ffffff',
+      boxShadow: '0 4px 32px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.1)',
+      borderRadius: '2px',
+      position: 'relative',
     }}>
+      {/* Page label tab */}
+      <div style={{
+        position: 'absolute', top: '-28px', left: '0',
+        fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)',
+        fontFamily: 'var(--font-display)', letterSpacing: '0.08em',
+        display: 'flex', alignItems: 'center', gap: '8px',
+      }}>
+        <span style={{
+          background: 'var(--accent)', color: '#151f2e',
+          padding: '2px 10px', borderRadius: '20px', fontSize: '10px',
+        }}>
+          Day {day.day_number}
+        </span>
+        {dp.full}
+      </div>
+
       <canvas
-        ref={ref}
-        width={980}
-        height={350}
+        ref={canvasRef}
+        width={1100}
+        height={720}
         style={{ width: '100%', height: 'auto', display: 'block' }}
       />
     </div>
   )
 }
 
-export default function LogSheet({ days, scheduleReady }) {
-  return (
-    <div style={{ maxWidth: '920px', margin: '0 auto' }}>
-      <div style={{
-        fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em',
-        color: 'var(--text-muted)', marginBottom: '6px',
-        fontFamily: 'var(--font-display)',
-      }}>
-        DAILY LOG SHEETS — {days.length} DAY{days.length > 1 ? 'S' : ''}
-      </div>
-      <div style={{
-        fontSize: '12px', color: 'var(--text-muted)',
-        marginBottom: '24px', lineHeight: 1.6,
-      }}>
-        Generated per FMCSA HOS rules ·
-        24-hour grid with 15-minute intervals ·
-        Connected step line matches the official FMCSA paper form
-      </div>
+// PDF Download 
+async function downloadAsPDF(canvasRefs, days) {
+  // Dynamically load jsPDF from CDN
+  if (!window.jspdf) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+      script.onload  = resolve
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+  }
 
-      {!scheduleReady && (
-        <div style={{
-          padding: '20px 24px', marginBottom: '24px',
-          background: 'rgba(79,195,247,0.06)',
-          border: '1.5px dashed rgba(79,195,247,0.25)',
-          borderRadius: '12px', textAlign: 'center',
-        }}>
-          <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.5 }}>📋</div>
+  const { jsPDF } = window.jspdf
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+
+  for (let i = 0; i < canvasRefs.length; i++) {
+    const canvas = canvasRefs[i]
+    if (!canvas) continue
+    const imgData = canvas.toDataURL('image/jpeg', 0.95)
+    if (i > 0) pdf.addPage()
+    pdf.addImage(imgData, 'JPEG', 5, 5, 287, 200)
+  }
+
+  pdf.save(`ELD-Log-${days.length}-Days.pdf`)
+}
+
+// Root export 
+export default function LogSheet({ days, tripInfo }) {
+  const canvasRefs = useRef([])
+
+  // reset refs array when days change
+  canvasRefs.current = []
+
+  const handleDownload = useCallback(async () => {
+    try {
+      await downloadAsPDF(canvasRefs.current, days)
+    } catch (e) {
+      console.error('PDF download failed:', e)
+      alert('PDF download failed. Please try again.')
+    }
+  }, [days])
+
+  return (
+    <div style={{ maxWidth: '960px', margin: '0 auto' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+        <div>
           <div style={{
-            fontFamily: 'var(--font-display)', fontWeight: 700,
-            fontSize: '14px', color: 'var(--text)', marginBottom: '6px',
+            fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em',
+            color: 'var(--text-muted)', marginBottom: '4px',
+            fontFamily: 'var(--font-display)',
           }}>
-            Showing calculated schedule
+            DAILY LOG SHEETS — {days.length} DAY{days.length > 1 ? 'S' : ''}
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            The log sheets below are auto-calculated from HOS rules.
-            Click <strong style={{ color: 'var(--accent)' }}>SET DRIVER SCHEDULE</strong> to
-            enter actual times and redraw with real data.
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            FMCSA-compliant form · 24-hour grid · 15-minute intervals
           </div>
         </div>
-      )}
 
+        <button
+          onClick={handleDownload}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '7px',
+            background: 'var(--accent)', color: '#151f2e',
+            border: 'none', borderRadius: '8px',
+            padding: '9px 18px', cursor: 'pointer',
+            fontFamily: 'var(--font-display)', fontWeight: 700,
+            fontSize: '12px', letterSpacing: '0.04em',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            flexShrink: 0,
+          }}
+        >
+          ⬇ Download PDF
+        </button>
+      </div>
+
+      {/* One page per day */}
       {days.map((day, i) => (
-        <DayLog key={i} day={day} />
+        <LogPage
+          key={`${day.date}-${i}`}
+          day={day}
+          tripInfo={tripInfo}
+          onCanvas={el => { canvasRefs.current[i] = el }}
+        />
       ))}
     </div>
   )
