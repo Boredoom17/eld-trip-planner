@@ -32,10 +32,14 @@ function scheduleToSegments(schedule) {
 }
 
 function drawSheet(canvas, day) {
+  // Display in H.MM format (hours.minutes), not decimal:
+  // 4.0h → "4.00", 4.25h → "4.15", 4.5h → "4.30", 4.75h → "4.45"
   const fmt = h => {
-  const r = Math.round(h * 4) / 4
-  return Number.isInteger(r) ? r.toFixed(1) : r.toString()
-}
+    const r    = Math.round(h * 4) / 4   // snap to nearest 0.25
+    const hrs  = Math.floor(r)
+    const mins = Math.round((r - hrs) * 60)  // 0, 15, 30, or 45
+    return `${hrs}.${String(mins).padStart(2, '0')}`
+  }
   const ctx = canvas.getContext('2d')
   const W   = canvas.width
   const H   = canvas.height
@@ -273,7 +277,16 @@ function drawSheet(canvas, day) {
     }
   })
 
-  // totals column 
+  // ── compute totals from drawn segments (used by both totals column AND remarks) ──
+  const totals = { off_duty: 0, sleeper: 0, driving: 0, on_duty: 0 }
+  segments.forEach(seg => {
+    const rk = STATUS_TO_ROW[seg.status]
+    if (rk) totals[rk] += (seg.end - seg.start)
+  })
+  // snap each total to nearest 0.25
+  Object.keys(totals).forEach(k => { totals[k] = Math.round(totals[k] * 4) / 4 })
+
+  // totals column
   ctx.fillStyle = '#f0f4f8'
   ctx.fillRect(ML + GW, MT, MR, GH)
   ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1
@@ -284,25 +297,16 @@ function drawSheet(canvas, day) {
   ctx.fillText('TOTAL', ML + GW + MR / 2, MT - 18)
   ctx.fillText('HOURS', ML + GW + MR / 2, MT - 8)
 
-  // compute totals from the drawn segments
-  const totals = { off_duty: 0, sleeper: 0, driving: 0, on_duty: 0 }
-  segments.forEach(seg => {
-    const rk = STATUS_TO_ROW[seg.status]
-    if (rk) totals[rk] += (seg.end - seg.start)
-  })
-
   ROWS.forEach((row, i) => {
     const cy  = MT + i * RH + RH / 2 + 5
-    const val = Math.round((totals[row.key] || 0) * 10) / 10
+    const val = totals[row.key] || 0
     if (i > 0) {
       ctx.beginPath(); ctx.moveTo(ML + GW, MT + i * RH); ctx.lineTo(ML + GW + MR, MT + i * RH)
       ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.8; ctx.stroke()
     }
     ctx.fillStyle = '#111'; ctx.font = 'bold 13px Arial, sans-serif'
     ctx.textAlign = 'center'
-    // round to nearest 0.25 then display as clean number
-    const rounded = Math.round(val * 4) / 4
-    ctx.fillText(Number.isInteger(rounded) ? rounded.toFixed(1) : rounded.toString(), ML + GW + MR / 2, cy)
+    ctx.fillText(fmt(val), ML + GW + MR / 2, cy)
   })
 
   // ── remarks ─────────────────────────────────────
@@ -316,9 +320,13 @@ function drawSheet(canvas, day) {
   ctx.textAlign = 'left'
   ctx.fillText('REMARKS:', 10, remY + 13)
 
+  // Use segment-computed totals (not backend day.off_duty_hours which incorrectly
+  // lumps sleeper berth into off duty)
   ctx.fillStyle = '#555'; ctx.font = '9.5px Arial, sans-serif'
+  const sleeperPart = totals.sleeper > 0 ? `  ·  Sleeper: ${fmt(totals.sleeper)}h` : ''
   ctx.fillText(
-    `Driving: ${fmt(day.driving_hours)}h  ·  On Duty (Not Drv.): ${fmt(day.on_duty_hours)}h  ·  Off Duty: ${fmt(day.off_duty_hours)}h  ·  Cycle used: ${day.cycle_hours_used} / 70 hrs`,    78, remY + 13
+    `Driving: ${fmt(totals.driving)}h  ·  On Duty (Not Drv.): ${fmt(totals.on_duty)}h  ·  Off Duty: ${fmt(totals.off_duty)}h${sleeperPart}  ·  Cycle used: ${day.cycle_hours_used} / 70 hrs`,
+    78, remY + 13
   )
 
   ctx.beginPath(); ctx.moveTo(10, remY + 20); ctx.lineTo(W - 10, remY + 20)

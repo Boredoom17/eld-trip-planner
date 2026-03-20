@@ -66,6 +66,7 @@ def plan_trip(current_location, pickup_location, dropoff_location,
     pickup_done      = False
     leg1_remaining   = leg1_hours
     leg1_miles_rem   = leg1_miles
+    miles_since_fuel = 0.0   # persists across days — resets only after a fuel stop
 
     stops.append({
         'type':         'start',
@@ -84,7 +85,6 @@ def plan_trip(current_location, pickup_location, dropoff_location,
         hours_on_duty_day = 0.0
         hours_since_break = 0.0
         window_used       = 0.0
-        miles_since_fuel  = 0.0
         raw_events        = []
 
         def rec(status, start_dt, end_dt):
@@ -96,8 +96,16 @@ def plan_trip(current_location, pickup_location, dropoff_location,
             rest_status = 'off_duty' if day_number == 1 else 'sleeper'
             rec(rest_status, day_midnight, current_time)
 
-        # pre-trip inspection — 30 min on duty
+        # pre-trip inspection — 30 min on duty (legally required every shift)
         t = current_time
+        stops.append({
+            'type':         'pre_trip',
+            'label':        'Pre-trip inspection',
+            'location':     current_location if day_number == 1 else 'En route',
+            'arrival_time': t.strftime('%Y-%m-%d %H:%M'),
+            'notes':        f'30-min pre-trip inspection (on duty, not driving). '
+                            f'Departs at {(t + timedelta(minutes=30)).strftime("%I:%M %p")}.'
+        })
         current_time      += timedelta(minutes=30)
         window_used       += 0.5
         hours_on_duty_day += 0.5
@@ -189,13 +197,15 @@ def plan_trip(current_location, pickup_location, dropoff_location,
             # ── fuel stop every 1000 miles ──────────────────────────────────
             if miles_since_fuel >= FUEL_STOP_EVERY_MILES:
                 t = current_time
+                miles_driven_so_far = total_miles - remaining_miles
                 stops.append({
                     'type':         'fuel',
                     'label':        'Fuel stop',
                     'location':     'En route',
                     'arrival_time': current_time.strftime('%Y-%m-%d %H:%M'),
-                    'notes':        f'Fueling — {round(remaining_miles)} miles left. '
-                                    f'Back at {(current_time + timedelta(minutes=30)).strftime("%I:%M %p")}'
+                    'notes':        f'Fueling — {round(remaining_miles)} miles remaining. '
+                                    f'Back at {(current_time + timedelta(minutes=30)).strftime("%I:%M %p")}',
+                    'miles_marker': round(miles_driven_so_far),
                 })
                 current_time      += timedelta(minutes=30)
                 window_used       += 0.5
