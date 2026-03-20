@@ -129,8 +129,11 @@ def plan_trip_view(request):
     pickup_location  = data['pickup_location'].strip()
     dropoff_location = data['dropoff_location'].strip()
     cycle_used_hours = float(data['cycle_used_hours'])
-    start_time_str   = data.get('start_time', None)
 
+    from datetime import datetime
+    _today = datetime.now().strftime('%Y-%m-%d')
+    start_time_str = data.get('start_time', None) or f'{_today}T08:00'
+    
     # basic presence check
     if not current_location or not pickup_location or not dropoff_location:
         return Response(

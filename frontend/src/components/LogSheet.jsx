@@ -32,6 +32,10 @@ function scheduleToSegments(schedule) {
 }
 
 function drawSheet(canvas, day) {
+  const fmt = h => {
+  const r = Math.round(h * 4) / 4
+  return Number.isInteger(r) ? r.toFixed(1) : r.toString()
+}
   const ctx = canvas.getContext('2d')
   const W   = canvas.width
   const H   = canvas.height
@@ -242,18 +246,34 @@ function drawSheet(canvas, day) {
 
   // red dots at every transition
   ctx.fillStyle = '#cc0000'
+  const dot = (x, y) => {
+    ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill()
+  }
   segments.forEach((seg, i) => {
     const rowKey = STATUS_TO_ROW[seg.status]
     const x1     = ML + (seg.start / 24) * GW
     const x2     = ML + (seg.end   / 24) * GW
     const y      = rowMidY(rowKey)
-    ctx.beginPath(); ctx.arc(x1, y, 4, 0, Math.PI * 2); ctx.fill()
+
+    // dot at start of this segment
+    dot(x1, y)
+
+    // if previous segment was a different row, also dot at the PREVIOUS row's y
+    // this marks both ends of the vertical drop line
+    if (i > 0) {
+      const prevRowKey = STATUS_TO_ROW[segments[i-1].status]
+      if (prevRowKey !== rowKey) {
+        dot(x1, rowMidY(prevRowKey))
+      }
+    }
+
+    // dot at end of last segment
     if (i === segments.length - 1) {
-      ctx.beginPath(); ctx.arc(x2, y, 4, 0, Math.PI * 2); ctx.fill()
+      dot(x2, y)
     }
   })
 
-  // ── totals column ───────────────────────────────
+  // totals column 
   ctx.fillStyle = '#f0f4f8'
   ctx.fillRect(ML + GW, MT, MR, GH)
   ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1
@@ -280,7 +300,9 @@ function drawSheet(canvas, day) {
     }
     ctx.fillStyle = '#111'; ctx.font = 'bold 13px Arial, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(val.toFixed(1), ML + GW + MR / 2, cy)
+    // round to nearest 0.25 then display as clean number
+    const rounded = Math.round(val * 4) / 4
+    ctx.fillText(Number.isInteger(rounded) ? rounded.toFixed(1) : rounded.toString(), ML + GW + MR / 2, cy)
   })
 
   // ── remarks ─────────────────────────────────────
@@ -296,8 +318,7 @@ function drawSheet(canvas, day) {
 
   ctx.fillStyle = '#555'; ctx.font = '9.5px Arial, sans-serif'
   ctx.fillText(
-    `Driving: ${day.driving_hours}h  ·  On Duty (Not Drv.): ${day.on_duty_hours}h  ·  Off Duty: ${day.off_duty_hours}h  ·  Cycle used: ${day.cycle_hours_used} / 70 hrs`,
-    78, remY + 13
+    `Driving: ${fmt(day.driving_hours)}h  ·  On Duty (Not Drv.): ${fmt(day.on_duty_hours)}h  ·  Off Duty: ${fmt(day.off_duty_hours)}h  ·  Cycle used: ${day.cycle_hours_used} / 70 hrs`,    78, remY + 13
   )
 
   ctx.beginPath(); ctx.moveTo(10, remY + 20); ctx.lineTo(W - 10, remY + 20)
@@ -355,7 +376,7 @@ function DayLog({ day }) {
 
   return (
     <div style={{
-      borderRadius: '12px', overflow: 'hidden',
+      borderRadius: '6px', overflow: 'hidden',
       marginBottom: '28px',
       boxShadow: '0 2px 20px rgba(0,0,0,0.2)',
       border: '1px solid var(--navy-border)',

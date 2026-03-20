@@ -11,21 +11,43 @@ PICKUP_DROPOFF_HOURS  = 1
 
 
 def hod(dt):
-    """Hour of day — decimal hours since midnight of dt's calendar date."""
     base = dt.replace(hour=0, minute=0, second=0, microsecond=0)
     return (dt - base).total_seconds() / 3600
+
+
+def round15(hours):
+    return round(hours * 4) / 4
+
+
+def floor15(hours):
+    import math
+    return math.floor(hours * 4) / 4
+
+
+def make_day_log(day_number, date, driving, on_duty, cycle, grid):
+    return {
+        'day_number':       day_number,
+        'date':             date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else date,
+        'driving_hours':    round(driving, 2),
+        'on_duty_hours':    round(on_duty, 2),
+        'off_duty_hours':   round(max(24 - driving - on_duty, 0), 2),
+        'total_hours':      24,
+        'cycle_hours_used': round(min(cycle, MAX_CYCLE_HOURS), 1),
+        'shift_start_hour': 0,
+        'grid':             grid,
+    }
 
 
 def plan_trip(current_location, pickup_location, dropoff_location,
               cycle_used_hours, route_data, start_time_str=None):
 
     leg1_miles = route_data['leg1_miles']
-    leg1_hours = route_data['leg1_hours']
     leg2_miles = route_data['leg2_miles']
-    leg2_hours = route_data['leg2_hours']
+    leg1_hours = round15(route_data['leg1_hours'])
+    leg2_hours = round15(route_data['leg2_hours'])
 
-    total_miles          = leg1_miles + leg2_miles
-    total_driving_hours  = leg1_hours + leg2_hours
+    total_miles         = leg1_miles + leg2_miles
+    total_driving_hours = leg1_hours + leg2_hours
 
     if start_time_str:
         try:
@@ -35,15 +57,15 @@ def plan_trip(current_location, pickup_location, dropoff_location,
     else:
         current_time = datetime.now().replace(minute=0, second=0, microsecond=0)
 
-    stops             = []
-    days              = []
-    cycle_hours_used  = float(cycle_used_hours)
-    day_number        = 1
-    remaining_driving = total_driving_hours
-    remaining_miles   = total_miles
-    pickup_done       = False
-    leg1_remaining    = leg1_hours
-    leg1_miles_rem    = leg1_miles
+    stops            = []
+    days             = []
+    cycle_hours_used = float(cycle_used_hours)
+    day_number       = 1
+    remaining_driving= total_driving_hours
+    remaining_miles  = total_miles
+    pickup_done      = False
+    leg1_remaining   = leg1_hours
+    leg1_miles_rem   = leg1_miles
 
     stops.append({
         'type':         'start',
@@ -54,29 +76,25 @@ def plan_trip(current_location, pickup_location, dropoff_location,
     })
 
     while remaining_driving > 0:
-        # ── record exactly where this calendar day starts ──────────────
-        day_date          = current_time.date()
-        day_start_time    = current_time          # real datetime of shift start
-        day_midnight      = datetime.combine(day_date, datetime.min.time())
+        day_date       = current_time.date()
+        day_start_time = current_time
+        day_midnight   = datetime.combine(day_date, datetime.min.time())
 
         hours_driven_day  = 0.0
         hours_on_duty_day = 0.0
         hours_since_break = 0.0
         window_used       = 0.0
         miles_since_fuel  = 0.0
-
-        # raw events list — (status, abs_start_dt, abs_end_dt)
-        # we will slice these to the calendar day at the end
-        raw_events = []
+        raw_events        = []
 
         def rec(status, start_dt, end_dt):
-            """Record a raw event with absolute datetimes."""
             if end_dt > start_dt:
                 raw_events.append((status, start_dt, end_dt))
 
-        # off duty from midnight to shift start (driver was sleeping)
+        # midnight → shift start
         if hod(current_time) > 0.001:
-            rec('off_duty', day_midnight, current_time)
+            rest_status = 'off_duty' if day_number == 1 else 'sleeper'
+            rec(rest_status, day_midnight, current_time)
 
         # pre-trip inspection — 30 min on duty
         t = current_time
@@ -86,10 +104,69 @@ def plan_trip(current_location, pickup_location, dropoff_location,
         cycle_hours_used  += 0.5
         rec('on_duty', t, current_time)
 
-        # ── main driving loop for this day ─────────────────────────────
+        had_34hr_restart = False
+
         while remaining_driving > 0 and window_used < MAX_WINDOW_HOURS:
 
-            # mandatory 30-min break after 8 cumulative driving hours
+            # ── check cycle limit BEFORE driving ───────────────────────────
+            if cycle_hours_used >= MAX_CYCLE_HOURS:
+                restart_start    = current_time
+                restart_end      = restart_start + timedelta(hours=34)
+                day_end_midnight = day_midnight + timedelta(days=1)
+
+                stops.append({
+                    'type':         'cycle_rest',
+                    'label':        '34-hr restart required',
+                    'location':     'En route',
+                    'arrival_time': restart_start.strftime('%Y-%m-%d %H:%M'),
+                    'notes':        f'Hit 70-hr limit. Off duty 34 hrs. '
+                                    f'Back {restart_end.strftime("%b %d %I:%M %p")}'
+                })
+
+                # record off_duty from restart start to end of current day
+                rec('off_duty', restart_start, min(restart_end, day_end_midnight))
+
+                # save current day
+                grid = build_grid_from_events(raw_events, day_midnight, day_end_midnight)
+                days.append(make_day_log(
+                    day_number, day_date,
+                    hours_driven_day, hours_on_duty_day,
+                    cycle_hours_used, grid
+                ))
+                day_number += 1
+
+                # full off_duty days during restart
+                check_date = day_midnight + timedelta(days=1)
+                while check_date + timedelta(days=1) <= restart_end:
+                    full_grid = [{'status': 'off_duty', 'start': 0.0, 'end': 24.0}]
+                    days.append(make_day_log(
+                        day_number, check_date.date(),
+                        0.0, 0.0, MAX_CYCLE_HOURS, full_grid
+                    ))
+                    day_number += 1
+                    check_date += timedelta(days=1)
+
+                # partial last day of restart
+                if check_date.date() == restart_end.date() and restart_end > check_date:
+                    full_grid = [{'status': 'off_duty', 'start': 0.0, 'end': 24.0}]
+                    days.append(make_day_log(
+                        day_number, check_date.date(),
+                        0.0, 0.0, MAX_CYCLE_HOURS, full_grid
+                    ))
+                    day_number += 1
+
+                # snap to next 8am — no driver starts at 10pm after resting
+                resume_8am = restart_end.replace(hour=8, minute=0, second=0)
+                if resume_8am <= restart_end:
+                    resume_8am += timedelta(days=1)
+
+                current_time      = resume_8am
+                cycle_hours_used  = 0.0
+                hours_since_break = 0.0
+                had_34hr_restart  = True
+                break
+
+            # ── mandatory 30-min break after 8 hrs driving ─────────────────
             if hours_since_break >= BREAK_AFTER_HOURS:
                 t = current_time
                 stops.append({
@@ -106,8 +183,10 @@ def plan_trip(current_location, pickup_location, dropoff_location,
                 hours_on_duty_day += 0.5
                 hours_since_break  = 0.0
                 rec('on_duty', t, current_time)
+                # re-check cycle after break
+                continue
 
-            # fuel stop every 1000 miles
+            # ── fuel stop every 1000 miles ──────────────────────────────────
             if miles_since_fuel >= FUEL_STOP_EVERY_MILES:
                 t = current_time
                 stops.append({
@@ -124,40 +203,29 @@ def plan_trip(current_location, pickup_location, dropoff_location,
                 hours_on_duty_day += 0.5
                 miles_since_fuel   = 0.0
                 rec('on_duty', t, current_time)
+                continue
 
-            # 70-hr cycle limit
-            if cycle_hours_used >= MAX_CYCLE_HOURS:
-                stops.append({
-                    'type':         'cycle_rest',
-                    'label':        '34-hr restart required',
-                    'location':     'En route',
-                    'arrival_time': current_time.strftime('%Y-%m-%d %H:%M'),
-                    'notes':        f'Hit 70-hr limit. Resting 34 hrs. '
-                                    f'Back {(current_time + timedelta(hours=34)).strftime("%b %d %I:%M %p")}'
-                })
-                rec('off_duty', current_time,
-                    current_time + timedelta(hours=34))
-                current_time      += timedelta(hours=34)
-                cycle_hours_used   = 0.0
-                hours_since_break  = 0.0
-                break
-
-            # biggest safe driving chunk right now
-            hours_till_break = BREAK_AFTER_HOURS - hours_since_break
-            hours_left_day   = MAX_DRIVING_HOURS  - hours_driven_day
-            window_left      = MAX_WINDOW_HOURS   - window_used
+            # ── calculate safe driving chunk ────────────────────────────────
+            hours_till_break  = BREAK_AFTER_HOURS - hours_since_break
+            hours_left_day    = MAX_DRIVING_HOURS  - hours_driven_day
+            window_left       = MAX_WINDOW_HOURS   - window_used
+            # never exceed cycle limit
+            cycle_left        = MAX_CYCLE_HOURS - cycle_hours_used
 
             if not pickup_done and leg1_remaining > 0:
-                chunk = min(leg1_remaining, hours_till_break,
-                            hours_left_day, window_left)
+                raw_chunk = min(leg1_remaining, hours_till_break,
+                                hours_left_day, window_left, cycle_left)
             else:
-                chunk = min(remaining_driving, hours_till_break,
-                            hours_left_day, window_left)
+                raw_chunk = min(remaining_driving, hours_till_break,
+                                hours_left_day, window_left, cycle_left)
 
+            chunk = floor15(raw_chunk)
             if chunk <= 0:
-                break
+                if raw_chunk >= 0.25:
+                    chunk = 0.25
+                else:
+                    break
 
-            # drive
             t = current_time
             miles_chunk        = chunk * AVERAGE_SPEED_MPH
             current_time      += timedelta(hours=chunk)
@@ -172,9 +240,11 @@ def plan_trip(current_location, pickup_location, dropoff_location,
             if not pickup_done:
                 leg1_remaining -= chunk
                 leg1_miles_rem -= miles_chunk
-                if leg1_remaining <= 0:
+                if leg1_remaining <= 0.001:
                     pickup_done        = True
-                    remaining_driving -= (chunk + leg1_remaining)
+                    remaining_driving -= chunk
+                    if leg1_remaining < 0:
+                        remaining_driving += leg1_remaining
                     t = current_time
                     stops.append({
                         'type':         'pickup',
@@ -192,8 +262,7 @@ def plan_trip(current_location, pickup_location, dropoff_location,
             else:
                 remaining_driving -= chunk
 
-            # reached dropoff
-            if remaining_driving <= 0:
+            if remaining_driving <= 0.001:
                 t = current_time
                 stops.append({
                     'type':         'dropoff',
@@ -205,13 +274,17 @@ def plan_trip(current_location, pickup_location, dropoff_location,
                 current_time      += timedelta(hours=PICKUP_DROPOFF_HOURS)
                 hours_on_duty_day += PICKUP_DROPOFF_HOURS
                 rec('on_duty', t, current_time)
+                remaining_driving = 0
                 break
 
             if (hours_driven_day  >= MAX_DRIVING_HOURS or
                     window_used   >= MAX_WINDOW_HOURS):
                 break
 
-        # ── end of driving window ──────────────────────────────────────
+        if had_34hr_restart:
+            continue
+
+        # normal end of day — 10-hr sleeper berth rest
         if remaining_driving > 0:
             rest_start = current_time
             rest_end   = current_time + timedelta(hours=REQUIRED_REST_HOURS)
@@ -220,28 +293,19 @@ def plan_trip(current_location, pickup_location, dropoff_location,
                 'label':        f'Rest stop — night {day_number}',
                 'location':     'En route',
                 'arrival_time': rest_start.strftime('%Y-%m-%d %H:%M'),
-                'notes':        f'10-hr mandatory rest. Resume at {rest_end.strftime("%I:%M %p")}'
+                'notes':        f'10-hr sleeper berth rest. Resume at {rest_end.strftime("%I:%M %p")}'
             })
-            rec('off_duty', rest_start, rest_end)
+            rec('sleeper', rest_start, rest_end)
             current_time = rest_end
 
-        # ── slice raw_events to THIS calendar day only ──────────────────
-        # day spans day_midnight .. day_midnight+24h
-        day_end = day_midnight + timedelta(hours=24)
-        grid = build_grid_from_events(raw_events, day_midnight, day_end)
+        day_end_dt = day_midnight + timedelta(hours=24)
+        grid = build_grid_from_events(raw_events, day_midnight, day_end_dt)
 
-        days.append({
-            'day_number':       day_number,
-            'date':             day_date.strftime('%Y-%m-%d'),
-            'driving_hours':    round(hours_driven_day,  2),
-            'on_duty_hours':    round(hours_on_duty_day, 2),
-            'off_duty_hours':   round(max(24 - hours_driven_day - hours_on_duty_day, 0), 2),
-            'total_hours':      24,
-            'cycle_hours_used': round(cycle_hours_used, 1),
-            'shift_start_hour': hod(day_start_time),
-            'grid':             grid,
-        })
-
+        days.append(make_day_log(
+            day_number, day_date,
+            hours_driven_day, hours_on_duty_day,
+            cycle_hours_used, grid
+        ))
         day_number += 1
 
     return {
@@ -255,57 +319,37 @@ def plan_trip(current_location, pickup_location, dropoff_location,
 
 
 def build_grid_from_events(raw_events, day_start_dt, day_end_dt):
-    """
-    Takes a list of (status, abs_start_dt, abs_end_dt) tuples,
-    clips each to [day_start_dt, day_end_dt], converts to decimal
-    hours 0-24, fills gaps as off_duty, merges adjacent same-status.
-    Always returns segments that sum to exactly 24.0 hours.
-    """
-    day_seconds = 24 * 3600
-
-    # clip each event to this calendar day and convert to decimal hours
     clipped = []
     for status, s, e in raw_events:
         cs = max(s, day_start_dt)
         ce = min(e, day_end_dt)
         if ce > cs:
-            sh = (cs - day_start_dt).total_seconds() / 3600
-            eh = (ce - day_start_dt).total_seconds() / 3600
-            clipped.append({'status': status,
-                            'start':  round(sh, 4),
-                            'end':    round(eh, 4)})
+            sh = round15((cs - day_start_dt).total_seconds() / 3600)
+            eh = round15((ce - day_start_dt).total_seconds() / 3600)
+            if eh > sh:
+                clipped.append({'status': status, 'start': sh, 'end': eh})
 
-    # sort by start
     clipped.sort(key=lambda x: x['start'])
-
     segs = []
 
-    # fill from 0 to first event
-    if not clipped or clipped[0]['start'] > 0.001:
-        segs.append({'status': 'off_duty', 'start': 0.0,
-                     'end': clipped[0]['start'] if clipped else 24.0})
+    if not clipped or clipped[0]['start'] > 0.0:
+        segs.append({
+            'status': 'off_duty', 'start': 0.0,
+            'end': clipped[0]['start'] if clipped else 24.0
+        })
 
     for ev in clipped:
         s, e = ev['start'], ev['end']
-        # fill any gap
         if segs and segs[-1]['end'] < s - 0.001:
-            segs.append({'status': 'off_duty',
-                         'start': round(segs[-1]['end'], 4),
-                         'end':   round(s, 4)})
-        segs.append({'status': ev['status'],
-                     'start':  round(s, 4),
-                     'end':    round(e, 4)})
+            segs.append({'status': 'off_duty', 'start': segs[-1]['end'], 'end': s})
+        segs.append({'status': ev['status'], 'start': s, 'end': e})
 
-    # fill tail to 24
-    if segs and segs[-1]['end'] < 23.999:
-        segs.append({'status': 'off_duty',
-                     'start': round(segs[-1]['end'], 4),
-                     'end':   24.0})
+    if segs and segs[-1]['end'] < 24.0:
+        segs.append({'status': 'off_duty', 'start': segs[-1]['end'], 'end': 24.0})
 
     if not segs:
         return [{'status': 'off_duty', 'start': 0.0, 'end': 24.0}]
 
-    # merge adjacent same-status
     merged = []
     for seg in segs:
         if (merged and
@@ -315,7 +359,6 @@ def build_grid_from_events(raw_events, day_start_dt, day_end_dt):
         else:
             merged.append(dict(seg))
 
-    # force last segment to end at exactly 24.0
     if merged:
         merged[-1]['end'] = 24.0
 

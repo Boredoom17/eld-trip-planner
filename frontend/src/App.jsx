@@ -287,7 +287,7 @@ export default function App() {
             position: 'absolute', inset: 0, overflowY: 'auto',
             background: 'var(--navy)', padding: '32px 40px',
           }}>
-            <StopsList stops={tripData.trip_plan.stops} />
+            <StopsList stops={tripData.trip_plan.stops} days={tripData.trip_plan.days} />
           </div>
         )}
 
