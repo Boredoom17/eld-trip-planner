@@ -1,80 +1,66 @@
-import {
-  Box, Typography, Stepper, Step, StepLabel,
-  StepContent, Paper, Chip
-} from '@mui/material'
-import LocalGasStationIcon from '@mui/icons-material/LocalGasStation'
-import HotelIcon from '@mui/icons-material/Hotel'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
-import InventoryIcon from '@mui/icons-material/Inventory'
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'
-import PauseCircleIcon from '@mui/icons-material/PauseCircle'
-import WarningIcon from '@mui/icons-material/Warning'
+const CFG = {
+  start:      { icon: '🚛', color: '#69f0ae', label: 'Departure'     },
+  pickup:     { icon: '📦', color: '#4fc3f7', label: 'Pickup'        },
+  dropoff:    { icon: '✅', color: '#ce93d8', label: 'Delivered'     },
+  rest:       { icon: '🛏', color: '#ffab40', label: '10-hr Rest'    },
+  rest_break: { icon: '⏸', color: '#fff176', label: '30-min Break'  },
+  fuel:       { icon: '⛽', color: '#80cbc4', label: 'Fuel Stop'     },
+  cycle_rest: { icon: '⚠️', color: '#ff5252', label: '34-hr Restart' },
+}
 
-const stopConfig = {
-  start:      { icon: <PlayArrowIcon />,     color: '#2e7d32', label: 'Departure'    },
-  pickup:     { icon: <InventoryIcon />,     color: '#1565c0', label: 'Pickup'       },
-  dropoff:    { icon: <CheckCircleIcon />,   color: '#6a1b9a', label: 'Dropoff'      },
-  rest:       { icon: <HotelIcon />,         color: '#e65100', label: 'Rest stop'    },
-  rest_break: { icon: <PauseCircleIcon />,   color: '#f9a825', label: '30-min break' },
-  fuel:       { icon: <LocalGasStationIcon />, color: '#00838f', label: 'Fuel stop'  },
-  cycle_rest: { icon: <WarningIcon />,       color: '#b71c1c', label: '34hr Restart' },
+function fmtTime(dt) {
+  if (!dt) return '—'
+  const [date, time] = dt.split(' ')
+  const d = new Date(`${date}T${time}`)
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) +
+    ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
 export default function StopsList({ stops }) {
   return (
-    <Box>
-      <Typography variant="h6" fontWeight={600} mb={3}>
-        Full stop schedule — {stops.length} stops total
-      </Typography>
-
-      <Stepper orientation="vertical" nonLinear>
-        {stops.map((stop, i) => {
-          const config = stopConfig[stop.type] || stopConfig.start
-
-          return (
-            <Step key={i} active expanded>
-              <StepLabel
-                StepIconComponent={() => (
-                  <Box sx={{
-                    color: config.color,
-                    display: 'flex',
-                    alignItems: 'center'
-                  }}>
-                    {config.icon}
-                  </Box>
-                )}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography fontWeight={600}>{stop.label}</Typography>
-                  <Chip
-                    label={config.label}
-                    size="small"
-                    sx={{
-                      bgcolor: config.color,
-                      color: 'white',
-                      fontSize: '0.7rem'
-                    }}
-                  />
-                </Box>
-              </StepLabel>
-
-              <StepContent>
-                <Paper variant="outlined" sx={{ p: 2, mb: 1, borderRadius: 2 }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    📍 {stop.location}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    🕐 {stop.arrival_time}
-                  </Typography>
-                  <Typography variant="body2">
-                    {stop.notes}
-                  </Typography>
-                </Paper>
-              </StepContent>
-            </Step>
-          )
-        })}
-      </Stepper>
-    </Box>
+    <div style={{ maxWidth: 540, margin: '0 auto' }}>
+      <div style={{
+        fontSize: 12, fontWeight: 700, letterSpacing: '0.12em',
+        color: 'var(--text-muted)', marginBottom: 12,
+        fontFamily: 'var(--font-display)',
+      }}>
+        STOP SCHEDULE
+      </div>
+      {stops.map((stop, i) => {
+        const cfg = CFG[stop.type] || CFG.start
+        return (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: 16,
+            background: 'var(--navy-card)', border: '1px solid var(--navy-border)',
+            borderRadius: 10, padding: '10px 18px', marginBottom: 10,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
+          }}>
+            <span style={{
+              fontSize: 20, color: cfg.color, marginRight: 8
+            }}>{cfg.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
+                {cfg.label}
+              </div>
+              {stop.location !== 'En route' && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {stop.location}
+                </div>
+              )}
+              {stop.notes && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {stop.notes}
+                </div>
+              )}
+            </div>
+            <div style={{
+              fontSize: 13, color: 'var(--accent)', fontWeight: 500, minWidth: 90, textAlign: 'right'
+            }}>
+              {fmtTime(stop.arrival_time)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
