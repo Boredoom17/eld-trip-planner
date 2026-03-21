@@ -1,35 +1,34 @@
 from datetime import datetime, timedelta
 import math
 
-# ── FMCSA HOS Constants ───────────────────────────────────────────────────────
+# FMCSCA HOS rules and related constants 
 AVERAGE_SPEED_MPH     = 55
-MAX_DRIVING_HOURS     = 11        # § 395.3(a)(3)
-MAX_WINDOW_HOURS      = 14        # § 395.3(a)(2)
-REQUIRED_REST_HOURS   = 10        # § 395.3(a)(1)
-BREAK_AFTER_HOURS     = 8         # § 395.3(a)(3)(ii)
+MAX_DRIVING_HOURS     = 11        
+MAX_WINDOW_HOURS      = 14       
+REQUIRED_REST_HOURS   = 10        
+BREAK_AFTER_HOURS     = 8         
 BREAK_DURATION        = 0.5       # 30-min break — recorded as OFF DUTY
-MAX_CYCLE_HOURS       = 70        # § 395.3(b)(2)
-RESTART_HOURS         = 34        # § 395.3(c)
+MAX_CYCLE_HOURS       = 70       
+RESTART_HOURS         = 34        
 FUEL_STOP_EVERY_MILES = 1000
 PICKUP_DROPOFF_HOURS  = 1.0
 POSTTRIP_HOURS        = 0.5
 PRETRIP_HOURS         = 0.5
 
 # MIN_USEFUL_DRIVE: don't start a shift if there isn't at least this much
-# cycle headroom above the pretrip cost. Set to 2.0h so a driver with only
 # 2.4h of cycle left (barely enough for pretrip + 1.9h drive) will rest
 # rather than do a nearly-empty day.
 MIN_USEFUL_DRIVE      = 2.0
 
 # On-duty overhead per driving day (for pre-planning).
-# Break is OFF DUTY → doesn't count. Only pretrip (0.5h) + occasional fuel (0.5h).
+# Break is OFF DUTY - doesn't count. Only pretrip (0.5h) + occasional fuel (0.5h).
 # Using 0.75 as a conservative average.
 OVERHEAD_PER_DAY      = 0.75
 
 SHIFT_START_HOUR      = 6
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# Helpers 
 
 def hod(dt):
     """Hour-of-day as float 0–24."""
@@ -85,7 +84,7 @@ def record_event(events, status, start_dt, end_dt):
         events.append((status, start_dt, end_dt))
 
 
-# ── Pre-planning: distribute driving hours evenly across days ─────────────────
+# Pre-planning: distribute driving hours evenly across days 
 
 def distribute_driving_hours(total_driving, cycle_available):
     """
@@ -157,7 +156,7 @@ def distribute_driving_hours(total_driving, cycle_available):
     return [min(round15(t), MAX_DRIVING_HOURS) for t in targets if t >= MIN_USEFUL_DRIVE]
 
 
-# ── Grid builder ──────────────────────────────────────────────────────────────
+# Grid builder 
 
 def build_grid_from_events(raw_events, day_start_dt, day_end_dt):
     """
@@ -223,7 +222,7 @@ def save_day(days, day_number, day_date, day_midnight, raw_events,
     ))
 
 
-# ── Main trip planner ─────────────────────────────────────────────────────────
+# Main trip planner 
 
 def plan_trip(current_location, pickup_location, dropoff_location,
               cycle_used_hours, route_data, start_time_str=None):
@@ -284,7 +283,7 @@ def plan_trip(current_location, pickup_location, dropoff_location,
         day_date     = current_time.date()
         day_midnight = datetime.combine(day_date, datetime.min.time())
 
-        # ── Cycle check: enough cycle left to start a meaningful shift? ───────
+        # Cycle check: enough cycle left to start a meaningful shift? 
         # Must have pretrip (0.5h) + MIN_USEFUL_DRIVE (2.0h) = 2.5h minimum
         cycle_left_now = MAX_CYCLE_HOURS - cycle_hours_used
         if cycle_left_now < PRETRIP_HOURS + MIN_USEFUL_DRIVE:
@@ -330,7 +329,7 @@ def plan_trip(current_location, pickup_location, dropoff_location,
             day_target_idx = 0
             continue
 
-        # ── Set up this driving day ──────────────────────────────────────────
+        # Set up driving day 
         hours_driven_day  = 0.0
         hours_on_duty_day = 0.0
         hours_since_break = 0.0
@@ -342,8 +341,6 @@ def plan_trip(current_location, pickup_location, dropoff_location,
         # - 'sleeper'   : normal mid-trip overnight rest
         #
         # cycle_hours_used == 0.0 is ONLY true right after a restart reset.
-        # This is checked here before any hours are added for today,
-        # so it's a clean signal: "we just came off a restart."
         if hod(current_time) > 0.001:
             if day_number == 1 or cycle_hours_used == 0.0:
                 pre_status = 'off_duty'
@@ -379,13 +376,13 @@ def plan_trip(current_location, pickup_location, dropoff_location,
         cycle_hours_used  += PRETRIP_HOURS          # pre-trip IS on-duty → counts
         record_event(raw_events, 'on_duty', pretrip_start, current_time)
 
-        # ── Inner driving loop ───────────────────────────────────────────────
+        # Inner driving loop 
         inner_safety = 0
         while remaining_driving > 0.001 and window_used < MAX_WINDOW_HOURS and inner_safety < 60:
             inner_safety += 1
 
             # 30-min mandatory break after 8h cumulative driving
-            # § 395.3(a)(3)(ii): break may be off-duty — does NOT count toward cycle
+            # break may be off-duty — does NOT count toward cycle
             if hours_since_break >= BREAK_AFTER_HOURS:
                 break_start = current_time
                 break_end   = current_time + timedelta(minutes=30)
@@ -400,8 +397,6 @@ def plan_trip(current_location, pickup_location, dropoff_location,
                 record_event(raw_events, 'off_duty', break_start, break_end)
                 current_time      += timedelta(minutes=30)
                 window_used       += BREAK_DURATION
-                # FIX BUG 1: break is OFF DUTY — do NOT add to cycle_hours_used
-                # (removed: cycle_hours_used += BREAK_DURATION)
                 hours_since_break  = 0.0
                 continue
 
@@ -526,10 +521,10 @@ def plan_trip(current_location, pickup_location, dropoff_location,
                     hours_driven_day >= MAX_DRIVING_HOURS):
                 break
 
-        # ── End of driving day ───────────────────────────────────────────────
+        # End of driving day 
         if remaining_driving > 0.001:
 
-            # ── Cycle limit hit this shift → start 34hr restart IMMEDIATELY ─
+            # Cycle limit hit this shift → start 34hr restart IMMEDIATELY
             # The driver parks the moment they hit 70hrs.
             # 34hr clock starts from that exact moment, not next morning.
             if cycle_hours_used >= MAX_CYCLE_HOURS:

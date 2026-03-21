@@ -75,7 +75,7 @@ function drawSheet(canvas, day, tripInfo) {
   const L   = PAD       // left edge
   const R   = W - PAD   // right edge
 
-  // ── TOP HEADER ──────────────────────────────────────────
+  // TOP HEADER 
   ctx.fillStyle = '#222'; ctx.font = '11px Arial, sans-serif'; ctx.textAlign = 'left'
   ctx.fillText('U.S. DEPARTMENT OF TRANSPORTATION', L, 34)
 
@@ -88,7 +88,7 @@ function drawSheet(canvas, day, tripInfo) {
   ctx.fillText('ORIGINAL — Submit to carrier within 13 days', R, 33)
   ctx.fillText('DUPLICATE — Driver retains possession for eight days', R, 47)
 
-  // ── DATE / MILES / VEHICLE ROW ───────────────────────────
+  // DATE / MILES / VEHICLE ROW 
   const dp       = fmtDateParts(day.date)
   const dayMiles = Math.round((day.driving_hours || 0) * 55)
   const dY       = 80
@@ -128,7 +128,7 @@ function drawSheet(canvas, day, tripInfo) {
   ctx.strokeStyle = '#999'; ctx.lineWidth = 0.8
   ctx.beginPath(); ctx.moveTo(L, d1); ctx.lineTo(R, d1); ctx.stroke()
 
-  // ── CARRIER / SIGNATURE ──────────────────────────────────
+  // CARRIER / SIGNATURE 
   const sY = d1 + 6
   const hw = (R - L - 16) / 2
 
@@ -167,8 +167,7 @@ function drawSheet(canvas, day, tripInfo) {
   ctx.fillStyle = '#666'; ctx.font = '9px Arial, sans-serif'
   ctx.fillText('(NAME OF CO-DRIVER)', R - 70, sY + 81)
 
-  // ── GRID ─────────────────────────────────────────────────
-  // Grid layout: left label area | 24-hour grid | totals column
+  // GRID 
   const LBL_W  = 68   // row label width
   const TOT_W  = 62   // totals width
   const GL     = L + LBL_W        // grid left
@@ -182,7 +181,7 @@ function drawSheet(canvas, day, tripInfo) {
   const GNB    = GNT + GH         // grid rows bottom
   const SLOTS  = 96
 
-  // ── Hour ruler — draws top or bottom strip ────────────────
+  // Hour ruler — draws top or bottom strip
   function drawHourRuler(yTop, rH) {
     ctx.fillStyle = '#f8f8f8'
     ctx.fillRect(GL, yTop, GW, rH)
@@ -270,7 +269,7 @@ function drawSheet(canvas, day, tripInfo) {
   ctx.strokeStyle = '#777'; ctx.lineWidth = 1.2
   ctx.strokeRect(GL, GNT, GW, GH)
 
-  // ── Totals column ────────────────────────────────────────
+  //  Totals column 
   ctx.fillStyle = '#f8f8f8'
   ctx.fillRect(GR, GNT, TOT_W, GH)
   ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1
@@ -281,7 +280,7 @@ function drawSheet(canvas, day, tripInfo) {
   ctx.fillText('TOTAL', GR + TOT_W / 2, GT + 14)
   ctx.fillText('HOURS', GR + TOT_W / 2, GT + 26)
 
-  // ── Activity segments ────────────────────────────────────
+  // Activity segments 
   const segments = (day.grid || [])
     .map(s => ({ status: s.status, start: s.start ?? s.start_hour, end: s.end ?? s.end_hour }))
     .filter(s => STATUS_TO_ROW[s.status] && s.end > s.start)
@@ -330,7 +329,7 @@ function drawSheet(canvas, day, tripInfo) {
     if (i === segments.length - 1) dot(x2, y)
   })
 
-  // ── Totals ───────────────────────────────────────────────
+  // Totals 
   const totalMins = { off_duty: 0, sleeper: 0, driving: 0, on_duty: 0 }
   segments.forEach(seg => {
     const k = STATUS_TO_ROW[seg.status]
@@ -354,7 +353,7 @@ function drawSheet(canvas, day, tripInfo) {
     ctx.fillText(lbl, GR + TOT_W / 2, cy)
   })
 
-  // ── REMARKS SECTION ──────────────────────────────────────
+  // REMARKS SECTION 
   const remY = GNB + 1
   const remH = 86
 
@@ -397,14 +396,14 @@ function drawSheet(canvas, day, tripInfo) {
   ctx.fillStyle = '#111'; ctx.font = 'bold 12px Arial, sans-serif'
   ctx.fillText(SHIPPING_NO, L + 110, remY + remH - 12)
 
-  // ── 70-HR CYCLE BAR ──────────────────────────────────────
+  // 70-HR CYCLE BAR 
   const barY     = remY + remH + 8
   const pct      = Math.min(cycleVal / 70, 1)
   const barC     = pct > 0.85 ? '#c62828' : pct > 0.6 ? '#e65100' : '#2e7d32'
   const barLabel = `${Math.round(pct * 100)}%  (${cycleStr} / 70:00 hrs)`
 
   const BAR_X = GL + 160
-  const BAR_W = GW - 160 - 180   // leave 180px for label on right
+  const BAR_W = GW - 160 - 180   // 180px for label on right
   const PCT_X = BAR_X + BAR_W + 10
 
   ctx.font = 'bold 10px Arial, sans-serif'
