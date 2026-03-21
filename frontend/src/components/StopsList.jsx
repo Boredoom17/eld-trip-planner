@@ -6,13 +6,13 @@ const STATUS = {
 }
 
 const EVENTS = {
-  start:      { icon: '🟢', color: '#69f0ae', label: 'Departure',              duration: null,     badge: null                },
-  pre_trip:   { icon: '🔧', color: '#ffab40', label: 'Pre-trip Inspection',    duration: '30 min', badge: 'ON DUTY NOT DRIVING' },
-  rest_break: { icon: '⏸',  color: '#fff176', label: '30-min Mandatory Break', duration: '30 min', badge: 'ON DUTY NOT DRIVING' },
-  fuel:       { icon: '⛽', color: '#80cbc4', label: 'Fuel Stop',              duration: '30 min', badge: 'ON DUTY NOT DRIVING' },
-  pickup:     { icon: '📦', color: '#4fc3f7', label: 'Pickup',                 duration: '1 hr',   badge: null                },
-  dropoff:    { icon: '✅', color: '#69f0ae', label: 'Delivered',              duration: '1 hr',   badge: null                },
-  cycle_rest: { icon: '⚠️',  color: '#ff5252', label: '34-hr Restart',          duration: '34 hr',  badge: null                },
+  start:      { icon: '🟢', color: '#69f0ae', label: 'Departure',              duration: null,     badge: null                  },
+  pre_trip:   { icon: '🔧', color: '#ffab40', label: 'Pre-trip Inspection',    duration: '30 min', badge: 'ON DUTY NOT DRIVING'  },
+  rest_break: { icon: '⏸',  color: '#fff176', label: '30-min Mandatory Break', duration: '30 min', badge: 'OFF DUTY'             },
+  fuel:       { icon: '⛽', color: '#80cbc4', label: 'Fuel Stop',              duration: '30 min', badge: 'ON DUTY NOT DRIVING'  },
+  pickup:     { icon: '📦', color: '#4fc3f7', label: 'Pickup',                 duration: '1 hr',   badge: null                  },
+  dropoff:    { icon: '✅', color: '#69f0ae', label: 'Delivered',              duration: '1 hr',   badge: null                  },
+  cycle_rest: { icon: '⚠️',  color: '#ff5252', label: '34-hr Restart',          duration: '34 hr',  badge: null                  },
 }
 
 function fmtArrival(dtStr) {
@@ -25,7 +25,6 @@ function fmtArrival(dtStr) {
   return `${hr}:${String(mm).padStart(2, '0')} ${ampm}`
 }
 
-// arrival time + 1hr = when driver actually leaves after loading/unloading
 function fmtDeparture(dtStr) {
   if (!dtStr) return ''
   const [date, time] = dtStr.split(' ')
@@ -70,11 +69,6 @@ function arrivalH(dtStr) {
   return hh + mm / 60
 }
 
-// Every item in the timeline — whether a status block or an event card —
-// renders through this single component so sizing is always identical.
-//
-// variant='status'  
-// variant='event'   - colored border, glowing dot, shows notes/location
 function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, note, variant }) {
   const isEvent = variant === 'event'
 
@@ -83,8 +77,7 @@ function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, n
       display: 'flex', gap: '10px', alignItems: 'stretch',
       marginBottom: '4px',
     }}>
-
-      {/* left dot — same vertical position for every row */}
+      {/* left dot */}
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         paddingTop: '14px', flexShrink: 0, width: '14px',
@@ -101,7 +94,7 @@ function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, n
         }} />
       </div>
 
-      {/* card body — fixed min-height so all rows are same size */}
+      {/* card body */}
       <div style={{
         flex: 1,
         minHeight: '40px',
@@ -114,14 +107,9 @@ function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, n
         alignItems: 'flex-start',
         gap: '10px',
       }}>
-        {/* left content */}
         <div style={{ flex: 1, minWidth: 0 }}>
-
           {/* title row */}
-          <div style={{
-            display: 'flex', alignItems: 'center',
-            gap: '6px', flexWrap: 'wrap',
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: isEvent ? '14px' : '12px', lineHeight: 1, flexShrink: 0 }}>
               {icon}
             </span>
@@ -160,7 +148,7 @@ function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, n
             )}
           </div>
 
-          {/* time range — shown for status blocks only */}
+          {/* time range — status blocks only */}
           {timeStr && !isEvent && (
             <div style={{
               fontSize: '11px', color: color,
@@ -172,7 +160,7 @@ function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, n
             </div>
           )}
 
-          {/* location + notes — shown for events only */}
+          {/* location + notes — events only */}
           {isEvent && sublabel && (
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
               📍 {sublabel}
@@ -185,7 +173,7 @@ function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, n
           )}
         </div>
 
-        {/* right: arrival time for events, nothing for status blocks */}
+        {/* right: arrival time for events */}
         {isEvent && (
           <div style={{
             fontSize: '12px', fontWeight: 600, color: color,
@@ -200,7 +188,6 @@ function TimelineRow({ color, icon, label, timeStr, duration, badge, sublabel, n
   )
 }
 
-// Day Summary Pills 
 function DaySummary({ grid }) {
   const drivingH = (grid || []).filter(s => s.status === 'driving')
     .reduce((a, s) => a + s.end - s.start, 0)
@@ -235,7 +222,6 @@ function DaySummary({ grid }) {
   )
 }
 
-// Main 
 export default function StopsList({ stops, days }) {
   if (!stops?.length || !days?.length) return null
 
@@ -244,6 +230,7 @@ export default function StopsList({ stops, days }) {
   const dropoffH    = dropoffStop ? arrivalH(dropoffStop.arrival_time) : 25
   const dropoffDate = dropoffStop?.arrival_time?.split(' ')[0]
 
+  // Only show these event types in the timeline (start/dropoff handled separately)
   const namedEvents = stops.filter(s =>
     ['pre_trip', 'rest_break', 'fuel', 'pickup', 'cycle_rest'].includes(s.type)
   )
@@ -265,14 +252,17 @@ export default function StopsList({ stops, days }) {
         const date      = day.date
         const isLastDay = di === days.length - 1
 
+        // A day is "all off duty" if its entire grid is a single off_duty block
         const isAllOffDuty =
           day.grid?.length === 1 &&
           day.grid[0].status === 'off_duty' &&
           day.grid[0].end - day.grid[0].start >= 23.9
 
+        // Distinguish between the day that STARTS the restart vs continuation days
         const hasCycleRest     = stops.some(s => s.type === 'cycle_rest' && s.arrival_time?.startsWith(date))
         const prevHadCycleRest = di > 0 && stops.some(s => s.type === 'cycle_rest' && s.arrival_time?.startsWith(days[di - 1].date))
-        const isRestartDay     = isAllOffDuty && (hasCycleRest || prevHadCycleRest)
+        const isRestartStart   = isAllOffDuty && hasCycleRest
+        const isRestartCont    = isAllOffDuty && !hasCycleRest && prevHadCycleRest
 
         const dayEvents  = namedEvents.filter(s => s.arrival_time?.startsWith(date))
         const cycleRestH = (() => {
@@ -288,9 +278,9 @@ export default function StopsList({ stops, days }) {
             {/* day header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <div style={{
-                background: isRestartDay ? '#ff525222' : 'var(--accent)',
-                color:      isRestartDay ? '#ff5252'   : '#151f2e',
-                border:     isRestartDay ? '1px solid #ff525255' : 'none',
+                background: (isRestartStart || isRestartCont) ? '#ff525222' : 'var(--accent)',
+                color:      (isRestartStart || isRestartCont) ? '#ff5252'   : '#151f2e',
+                border:     (isRestartStart || isRestartCont) ? '1px solid #ff525255' : 'none',
                 fontFamily: 'var(--font-display)', fontWeight: 700,
                 fontSize: '11px', padding: '4px 14px',
                 borderRadius: '20px', whiteSpace: 'nowrap',
@@ -301,7 +291,8 @@ export default function StopsList({ stops, days }) {
               <div style={{ flex: 1, height: '1px', background: 'var(--navy-border)' }} />
             </div>
 
-            {isRestartDay ? (
+            {isRestartStart ? (
+              // Day that hits the 70hr limit and begins the 34hr restart
               <div style={{
                 background: '#ff525210', border: '1px solid #ff525228',
                 borderRadius: '10px', padding: '14px 16px',
@@ -314,7 +305,7 @@ export default function StopsList({ stops, days }) {
                         34-hr Restart — Off Duty
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                        Driver fully off duty. Parked and resting. Cycle hours reset to 0 upon resuming.
+                        70-hr cycle limit reached. Driver off duty 34 hrs. Cycle resets to 0 upon resuming.
                       </div>
                     </div>
                   </div>
@@ -326,42 +317,63 @@ export default function StopsList({ stops, days }) {
                   }}>34 hr</span>
                 </div>
               </div>
+            ) : isRestartCont ? (
+              // Continuation day — still in the 34hr rest window
+              <div style={{
+                background: '#ff525208', border: '1px dashed #ff525228',
+                borderRadius: '10px', padding: '12px 16px',
+                display: 'flex', alignItems: 'center', gap: '10px',
+              }}>
+                <span style={{ fontSize: '16px' }}>🛑</span>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  <span style={{ fontWeight: 600, color: '#ff7070' }}>Continued 34-hr rest</span>
+                  {' '}— driver remains off duty until restart completes.
+                </div>
+              </div>
             ) : (
+              // Normal driving day
               <div>
                 <DaySummary grid={day.grid} />
-
-                {/* departure — day 1 only */}
-                {di === 0 && startStop && (
-                  <TimelineRow
-                    variant="event"
-                    color={EVENTS.start.color}
-                    icon={EVENTS.start.icon}
-                    label={EVENTS.start.label}
-                    timeStr={fmtArrival(startStop.arrival_time)}
-                    sublabel={startStop.location !== 'En route' ? startStop.location : null}
-                    note={startStop.notes}
-                  />
-                )}
 
                 {(() => {
                   const items = []
 
+                  // Collect rest_break event start times so we can suppress
+                  // the matching off_duty grid segment (prevents double-rendering)
+                  const breakEventTimes = dayEvents
+                    .filter(s => s.type === 'rest_break')
+                    .map(s => arrivalH(s.arrival_time))
+
+                  // Add grid segments
                   gridSegs.forEach(seg => {
+                    // Day 1: hide the initial off_duty before shift starts
                     if (di === 0 && seg.status === 'off_duty' && seg.end <= 8.5) return
+                    // Hide off_duty after cycle_rest fires on same day
                     if (cycleRestH >= 0 && seg.status === 'off_duty' && seg.start >= cycleRestH - 0.1) return
+                    // Last day: hide trailing segments after dropoff
                     if (isLastDay && date === dropoffDate &&
                         (seg.status === 'off_duty' || seg.status === 'sleeper' || seg.status === 'on_duty') &&
                         seg.start >= dropoffH - 0.1) return
+                    // Suppress the 30-min off_duty that IS the mandatory break
+                    // (the rest_break event card already shows it)
+                    if (seg.status === 'off_duty' &&
+                        breakEventTimes.some(bt => Math.abs(bt - seg.start) < 0.1)) return
+
                     items.push({ kind: 'seg', time: seg.start, seg })
                   })
 
+                  // Add event stops
                   dayEvents.forEach(stop => {
-                    items.push({ kind: 'event', time: arrivalH(stop.arrival_time), stop })
+                    const t = arrivalH(stop.arrival_time)
+                    // Day 1: give pre_trip a tiny negative offset so it sorts
+                    // before the departure stop at the same timestamp
+                    const sortTime = (di === 0 && stop.type === 'pre_trip') ? t - 0.001 : t
+                    items.push({ kind: 'event', time: sortTime, stop })
                   })
 
                   items.sort((a, b) => a.time - b.time)
 
-                  // build and merge coverage ranges from events
+                  // Build coverage ranges from events to suppress overlapping on_duty segs
                   const rawRanges = items
                     .filter(i => i.kind === 'event')
                     .map(i => ({ start: i.time - 0.05, end: i.time + 1.1 }))
@@ -369,7 +381,9 @@ export default function StopsList({ stops, days }) {
                   const coveredRanges = []
                   rawRanges.forEach(r => {
                     if (coveredRanges.length && r.start <= coveredRanges[coveredRanges.length - 1].end) {
-                      coveredRanges[coveredRanges.length - 1].end = Math.max(coveredRanges[coveredRanges.length - 1].end, r.end)
+                      coveredRanges[coveredRanges.length - 1].end = Math.max(
+                        coveredRanges[coveredRanges.length - 1].end, r.end
+                      )
                     } else {
                       coveredRanges.push({ ...r })
                     }
@@ -379,10 +393,14 @@ export default function StopsList({ stops, days }) {
                   items.forEach((item, idx) => {
                     if (item.kind === 'seg') {
                       const { seg } = item
+                      // Suppress on_duty segs that are fully covered by an event card
                       if (seg.status === 'on_duty') {
-                        const covered = coveredRanges.some(r => seg.start >= r.start && seg.end <= r.end)
+                        const covered = coveredRanges.some(
+                          r => seg.start >= r.start && seg.end <= r.end
+                        )
                         if (covered) return
                       }
+                      // Suppress tiny off_duty gaps (< 6 min — float noise)
                       if (seg.status === 'off_duty' && seg.end - seg.start < 0.1) return
 
                       const s = STATUS[seg.status]
@@ -402,6 +420,15 @@ export default function StopsList({ stops, days }) {
                       const { stop } = item
                       const e = EVENTS[stop.type]
                       if (!e) return
+
+                      // Day 1 pre_trip: show departure location as sublabel
+                      const sublabel =
+                        stop.type === 'pre_trip' && di === 0 && startStop
+                          ? startStop.location
+                          : stop.location && stop.location !== 'En route'
+                            ? stop.location
+                            : null
+
                       rendered.push(
                         <TimelineRow
                           key={`ev-${idx}`}
@@ -412,7 +439,7 @@ export default function StopsList({ stops, days }) {
                           timeStr={fmtArrival(stop.arrival_time)}
                           duration={e.duration}
                           badge={e.badge}
-                          sublabel={stop.location && stop.location !== 'En route' ? stop.location : null}
+                          sublabel={sublabel}
                           note={stop.notes}
                         />
                       )
@@ -422,7 +449,7 @@ export default function StopsList({ stops, days }) {
                   return rendered
                 })()}
 
-                {/* delivered — last day only */}
+                {/* Delivered — last day only */}
                 {isLastDay && dropoffStop && (
                   <TimelineRow
                     variant="event"
@@ -441,6 +468,7 @@ export default function StopsList({ stops, days }) {
         )
       })}
 
+      {/* Trip complete banner */}
       {dropoffStop && (
         <div style={{ textAlign: 'center', paddingBottom: '28px' }}>
           <div style={{

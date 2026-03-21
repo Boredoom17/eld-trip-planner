@@ -117,7 +117,7 @@ function LocationInput({ id, label, value, onChange, placeholder, icon }) {
   )
 }
 
-export default function TripForm({ onSubmit, loading }) {
+export default function TripForm({ onSubmit, loading, hasResults }) {
   const [form, setForm] = useState({
     current_location: '',
     pickup_location:  '',
@@ -168,7 +168,7 @@ export default function TripForm({ onSubmit, loading }) {
         onMouseEnter={e => { if (!loading) e.currentTarget.style.background = '#81d4fa' }}
         onMouseLeave={e => { if (!loading) e.currentTarget.style.background = 'var(--accent)' }}
       >
-        {loading ? 'PLANNING...' : 'PLAN TRIP →'}
+        {loading ? 'PLANNING...' : hasResults ? 'SHOW TRIP →' : 'PLAN TRIP →'}
       </button>
     </form>
   )
