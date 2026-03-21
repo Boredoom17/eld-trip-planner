@@ -43,7 +43,6 @@ export default function App() {
   const [tripData, setTripData]   = useState(null)
   const [activeTab, setActiveTab] = useState('map')
   const [leftWidth, setLeftWidth] = useState(400)
-  const [showResults, setShowResults] = useState(false)
   const dragging      = useRef(false)
   const containerRef  = useRef(null)
   const lastSubmitted = useRef(null)
@@ -55,7 +54,6 @@ export default function App() {
       lastSubmitted.current &&
       JSON.stringify(formData) === JSON.stringify(lastSubmitted.current)
     ) {
-      setShowResults(true)
       return
     }
 
@@ -66,7 +64,6 @@ export default function App() {
       lastSubmitted.current = formData
       setTripData(res.data)
       setActiveTab('map')
-      if (isMobile) setShowResults(true)
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong — is the backend running?')
     } finally {
@@ -107,18 +104,11 @@ export default function App() {
             </div>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '17px', color: 'var(--text)' }}>ELD Trip Planner</div>
           </div>
-          {tripData && (
-            <button
-              onClick={() => setShowResults(r => !r)}
-              style={{ background: 'var(--accent)', color: '#151f2e', border: 'none', borderRadius: '8px', padding: '7px 14px', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}
-            >
-              {showResults ? '← Form' : 'Results →'}
-            </button>
-          )}
+
         </div>
 
         {/* FORM PANEL — always mounted, hidden via CSS */}
-        <div style={{ padding: '18px', overflowY: 'auto', flex: showResults ? 0 : 1, display: showResults ? 'none' : 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '18px', overflowY: 'auto', flex: 1, flexDirection: 'column' }}>
           <TripForm onSubmit={handlePlanTrip} loading={loading} hasResults={!!tripData} />
 
           {error && (
@@ -152,7 +142,7 @@ export default function App() {
         </div>
 
         {/* RESULTS PANEL */}
-        <div style={{ flex: 1, display: showResults && tripData ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: tripData ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden' }}>
 
           {/* Tab content — all three kept mounted, toggled via display:none to preserve scroll */}
           <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
