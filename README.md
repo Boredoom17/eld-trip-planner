@@ -70,16 +70,16 @@ Enter Trip Details → ORS Routing API → HOS Calculator → Day-by-Day Schedul
 
 ## ⚙️ HOS Rules Implemented
 
-| Rule | Value | Regulation |
-|---|---|---|
-| Max driving per shift | 11 hours | § 395.3(a)(3) |
-| Driving window | 14 hours from shift start | § 395.3(a)(2) |
-| Mandatory break | 30 min after 8h cumulative driving | § 395.3(a)(3)(ii) |
-| Rest between shifts | 10 hours sleeper berth | § 395.3(a)(1) |
-| Cycle limit | 70 hours / 8 days | § 395.3(b)(2) |
-| Restart | 34 hours off-duty | § 395.3(c) |
-| Fuel stops | Every 1,000 miles | — |
-| Pickup / Dropoff | 1 hour each (on-duty not driving) | — |
+| Rule | Value |
+|---|---|
+| Max driving per shift | 11 hours | 
+| Driving window | 14 hours from shift start | 
+| Mandatory break | 30 min after 8h cumulative driving | 
+| Rest between shifts | 10 hours sleeper berth |
+| Cycle limit | 70 hours / 8 days |
+| Restart | 34 hours off-duty |
+| Fuel stops | Every 1,000 miles | 
+| Pickup / Dropoff | 1 hour each (on-duty not driving) |
 
 **Break classification:** Mandatory break is OFF DUTY and does not count toward the 70-hr cycle per § 395.3(a)(3)(ii).
 
