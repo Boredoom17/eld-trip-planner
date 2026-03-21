@@ -89,7 +89,7 @@ export default function App() {
     { key: 'logs',  label: '📋 Log Sheets' },
   ]
 
-  // ─── MOBILE LAYOUT ───────────────────────────────────────────────
+  // MOBILE LAYOUT 
   if (isMobile) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--navy)', display: 'flex', flexDirection: 'column' }}>
@@ -208,7 +208,7 @@ export default function App() {
     )
   }
 
-  // ─── DESKTOP LAYOUT ──────────────────────────────────────────────
+  // DESKTOP LAYOUT 
   return (
     <div
       ref={containerRef}
