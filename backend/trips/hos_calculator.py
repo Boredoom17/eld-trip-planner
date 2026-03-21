@@ -230,11 +230,11 @@ def plan_trip(current_location, pickup_location, dropoff_location,
     Plan a two-leg trip (current → pickup → dropoff) with full FMCSA HOS compliance.
 
     Key rules enforced:
-    - 11h driving limit per shift (§ 395.3(a)(3))
-    - 14h driving window (§ 395.3(a)(2))
-    - 30-min break after 8h cumulative driving — recorded as OFF DUTY (§ 395.3(a)(3)(ii))
-    - 10h consecutive rest between shifts (§ 395.3(a)(1))
-    - 70h/8-day cycle limit with 34h restart (§ 395.3(b)(2), § 395.3(c))
+    - 11h driving limit per shift 
+    - 14h driving window 
+    - 30-min break after 8h cumulative driving — recorded as OFF DUTY
+    - 10h consecutive rest between shifts
+    - 70h/8-day cycle limit with 34h restart
     - Fuel stop every 1000 miles (fired immediately during driving, not next morning)
     """
     leg1_miles = route_data['leg1_miles']
