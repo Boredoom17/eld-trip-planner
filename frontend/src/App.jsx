@@ -92,19 +92,9 @@ export default function App() {
       <div style={{ minHeight: '100vh', background: 'var(--navy)', display: 'flex', flexDirection: 'column' }}>
 
         {/* HEADER */}
-        <div style={{ padding: '16px 18px 12px', background: 'var(--navy-light)', borderBottom: '1px solid var(--navy-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {['#ff5252', '#69f0ae', '#4fc3f7'].map((c, i) => (
-                  <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />
-                ))}
-              </div>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '12px', letterSpacing: '0.1em', color: 'var(--text)' }}>SPOTTER</span>
-            </div>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '17px', color: 'var(--text)' }}>ELD Trip Planner</div>
-          </div>
-
+        <div style={{ padding: '16px 18px 12px', background: 'var(--navy-light)', borderBottom: '1px solid var(--navy-border)', flexShrink: 0 }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '17px', color: 'var(--text)' }}>ELD Trip Planner</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>FMCSA Hours of Service compliance tool</div>
         </div>
 
         {/* FORM PANEL — always mounted, hidden via CSS */}
@@ -216,14 +206,6 @@ export default function App() {
         display: 'flex', flexDirection: 'column',
       }}>
         <div style={{ padding: '22px 22px 16px', borderBottom: '1px solid var(--navy-border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-            <div style={{ display: 'flex', gap: '5px' }}>
-              {['#ff5252', '#69f0ae', '#4fc3f7'].map((c, i) => (
-                <div key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />
-              ))}
-            </div>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '13px', letterSpacing: '0.1em', color: 'var(--text)' }}>SPOTTER</span>
-          </div>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '20px', lineHeight: 1.2, color: 'var(--text)' }}>ELD Trip Planner</div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px' }}>FMCSA Hours of Service compliance tool</div>
         </div>

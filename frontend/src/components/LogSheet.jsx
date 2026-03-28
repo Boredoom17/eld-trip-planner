@@ -1,11 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react'
 
-const CARRIER_NAME   = 'Spotter Freight Lines, Inc.'
+const CARRIER_NAME   = 'Independent Carrier'
 const OFFICE_ADDRESS = 'Washington, D.C., 20001'
 const DRIVER_NAME    = 'John Doe'
 const CODRIVER_NAME  = '—'
-const VEHICLE_NUMBER = 'SFL-4872'
-const SHIPPING_NO    = 'SFL-' + Math.floor(100000 + Math.random() * 900000)
+const VEHICLE_NUMBER = 'TRK-4872'
+const SHIPPING_NO    = 'SHP-' + Math.floor(100000 + Math.random() * 900000)
 
 const ROWS = [
   { key: 'off_duty', label: ['Off', 'Duty'] },
@@ -237,8 +237,6 @@ function drawSheet(canvas, day, tripInfo) {
       ctx.fillText(row.label[2], L + 4, y + RH / 2 + 14)
     }
 
-
-
     // horizontal divider
     ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.7
     ctx.beginPath(); ctx.moveTo(L, y + RH); ctx.lineTo(R, y + RH); ctx.stroke()
@@ -403,7 +401,7 @@ function drawSheet(canvas, day, tripInfo) {
   const barLabel = `${Math.round(pct * 100)}%  (${cycleStr} / 70:00 hrs)`
 
   const BAR_X = GL + 160
-  const BAR_W = GW - 160 - 180   // 180px for label on right
+  const BAR_W = GW - 160 - 180
   const PCT_X = BAR_X + BAR_W + 10
 
   ctx.font = 'bold 10px Arial, sans-serif'
