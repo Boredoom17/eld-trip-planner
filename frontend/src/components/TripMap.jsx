@@ -44,6 +44,36 @@ function FitBounds({ allPoints }) {
   return null
 }
 
+function SyncMapSize({ isVisible }) {
+  const map = useMap()
+
+  useEffect(() => {
+    const refreshSize = () => {
+      // Leaflet needs explicit invalidation when shown after display:none.
+      map.invalidateSize({ pan: false, debounceMoveend: true })
+    }
+
+    if (isVisible) {
+      const t1 = setTimeout(refreshSize, 0)
+      const t2 = setTimeout(refreshSize, 150)
+      return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+      }
+    }
+  }, [isVisible, map])
+
+  useEffect(() => {
+    const onResize = () => {
+      map.invalidateSize({ pan: false, debounceMoveend: true })
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [map])
+
+  return null
+}
+
 function formatPopupTime(dt) {
   if (!dt) return '—'
   const [date, time] = dt.split(' ')
@@ -60,7 +90,7 @@ const LEGEND = [
   { emoji: '⛽', label: 'Fuel stop (every 1000 mi)' },
 ]
 
-export default function TripMap({ coordinates, routeGeometry, stops }) {
+export default function TripMap({ coordinates, routeGeometry, stops, isVisible = true }) {
   const leg1 = useMemo(() => routeGeometry?.leg1 ? decodePoly(routeGeometry.leg1) : [], [routeGeometry?.leg1])
   const leg2 = useMemo(() => routeGeometry?.leg2 ? decodePoly(routeGeometry.leg2) : [], [routeGeometry?.leg2])
   const allPoints = useMemo(() => [...leg1, ...leg2], [leg1, leg2])
@@ -71,6 +101,7 @@ export default function TripMap({ coordinates, routeGeometry, stops }) {
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       <MapContainer center={center} zoom={5} minZoom={3} maxZoom={18} maxBounds={[[-90,-180],[90,180]]} maxBoundsViscosity={1.0} style={{ height: '100%', width: '100%' }} zoomControl={false} worldCopyJump={false}>
         <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" attribution='&copy; <a href="https://carto.com">CARTO</a> &copy; <a href="https://openstreetmap.org">OSM</a>' />
+        <SyncMapSize isVisible={isVisible} />
         <FitBounds allPoints={allPoints} />
         {leg1.length > 0 && <Polyline positions={leg1} color="#4fc3f7" weight={5} opacity={0.9} />}
         {leg2.length > 0 && <Polyline positions={leg2} color="#ce93d8" weight={5} opacity={0.9} />}

@@ -117,39 +117,32 @@ function LocationInput({ id, label, value, onChange, placeholder, icon }) {
   )
 }
 
-export default function TripForm({ onSubmit, loading, hasResults }) {
-  const [form, setForm] = useState({
-    current_location: '',
-    pickup_location:  '',
-    dropoff_location: '',
-    cycle_used_hours: 0,
-  })
-
-  const pct         = (form.cycle_used_hours / 70) * 100
+export default function TripForm({ onSubmit, loading, hasResults, formData, setFormData }) {
+  const pct         = (formData.cycle_used_hours / 70) * 100
   const sliderColor = pct > 85 ? '#ff5252' : pct > 60 ? '#ffab40' : 'var(--accent)'
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!form.current_location || !form.pickup_location || !form.dropoff_location) return
-    onSubmit({ ...form })
+    if (!formData.current_location || !formData.pickup_location || !formData.dropoff_location) return
+    onSubmit({ ...formData })
   }
 
   return (
     <form onSubmit={handleSubmit}>
-      <LocationInput id="loc-current" label="CURRENT LOCATION" icon="🚛" value={form.current_location} onChange={v => setForm(f => ({ ...f, current_location: v }))} placeholder="e.g. Chicago, IL" />
+      <LocationInput id="loc-current" label="CURRENT LOCATION" icon="🚛" value={formData.current_location} onChange={v => setFormData(f => ({ ...f, current_location: v }))} placeholder="e.g. Chicago, IL" />
       <div style={{ marginLeft: '15px', height: '12px', borderLeft: '2px dashed var(--navy-border)' }} />
-      <LocationInput id="loc-pickup" label="PICKUP LOCATION" icon="📦" value={form.pickup_location} onChange={v => setForm(f => ({ ...f, pickup_location: v }))} placeholder="e.g. Denver, CO" />
+      <LocationInput id="loc-pickup" label="PICKUP LOCATION" icon="📦" value={formData.pickup_location} onChange={v => setFormData(f => ({ ...f, pickup_location: v }))} placeholder="e.g. Denver, CO" />
       <div style={{ marginLeft: '15px', height: '12px', borderLeft: '2px dashed var(--navy-border)' }} />
-      <LocationInput id="loc-dropoff" label="DROPOFF LOCATION" icon="✅" value={form.dropoff_location} onChange={v => setForm(f => ({ ...f, dropoff_location: v }))} placeholder="e.g. Nashville, TN" />
+      <LocationInput id="loc-dropoff" label="DROPOFF LOCATION" icon="✅" value={formData.dropoff_location} onChange={v => setFormData(f => ({ ...f, dropoff_location: v }))} placeholder="e.g. Nashville, TN" />
 
       <div style={{ marginTop: '18px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
           <label style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', fontFamily: 'var(--font-display)' }}>HOURS DRIVEN THIS WEEK</label>
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '15px', color: sliderColor }}>
-            {form.cycle_used_hours}<span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11px' }}> / 70 hrs</span>
+            {formData.cycle_used_hours}<span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11px' }}> / 70 hrs</span>
           </span>
         </div>
-        <input type="range" min={0} max={69.5} step={0.5} value={form.cycle_used_hours} onChange={e => setForm(f => ({ ...f, cycle_used_hours: parseFloat(e.target.value) }))} style={{ width: '100%', accentColor: sliderColor, cursor: 'pointer' }} />
+        <input type="range" min={0} max={69.5} step={0.5} value={formData.cycle_used_hours} onChange={e => setFormData(f => ({ ...f, cycle_used_hours: parseFloat(e.target.value) }))} style={{ width: '100%', accentColor: sliderColor, cursor: 'pointer' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>0 hrs</span>
           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>35 hrs</span>

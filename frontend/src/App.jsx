@@ -43,27 +43,34 @@ export default function App() {
   const [tripData, setTripData]   = useState(null)
   const [activeTab, setActiveTab] = useState('map')
   const [leftWidth, setLeftWidth] = useState(400)
+  const [formData, setFormData]   = useState({
+    current_location: '',
+    pickup_location: '',
+    dropoff_location: '',
+    cycle_used_hours: 0,
+  })
   const dragging      = useRef(false)
   const containerRef  = useRef(null)
   const lastSubmitted = useRef(null)
   const isMobile      = useIsMobile()
 
-  const handlePlanTrip = async (formData) => {
+  const handlePlanTrip = async (form) => {
     if (
       tripData &&
       lastSubmitted.current &&
-      JSON.stringify(formData) === JSON.stringify(lastSubmitted.current)
+      JSON.stringify(form) === JSON.stringify(lastSubmitted.current)
     ) {
       return
     }
 
+    setFormData(form)
     setLoading(true)
     setError(null)
     try {
-      const res = await axios.post(`${API}/api/plan-trip/`, formData)
-      lastSubmitted.current = formData
+      const res = await axios.post(`${API}/api/plan-trip/`, form)
+      lastSubmitted.current = form
       setTripData(res.data)
-      setActiveTab('map')
+      setActiveTab('home')
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong — is the backend running?')
     } finally {
@@ -81,99 +88,84 @@ export default function App() {
   const onMouseUp = useCallback(() => { dragging.current = false }, [])
 
   const tabs = [
+    { key: 'home',  label: '🏠 Home'      },
     { key: 'map',   label: '🗺 Map'        },
     { key: 'stops', label: '📍 Stops'      },
     { key: 'logs',  label: '📋 Log Sheets' },
   ]
 
-  // MOBILE LAYOUT 
+  // MOBILE LAYOUT
   if (isMobile) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--navy)', display: 'flex', flexDirection: 'column' }}>
-
+      <div style={{ height: '100vh', background: 'var(--navy)', display: 'flex', flexDirection: 'column' }}>
         {/* HEADER */}
         <div style={{ padding: '16px 18px 12px', background: 'var(--navy-light)', borderBottom: '1px solid var(--navy-border)', flexShrink: 0 }}>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '17px', color: 'var(--text)' }}>ELD Trip Planner</div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>FMCSA Hours of Service compliance tool</div>
         </div>
 
-        {/* FORM PANEL — always mounted, hidden via CSS */}
-        <div style={{ padding: '18px', overflowY: 'auto', flex: 1, flexDirection: 'column' }}>
-          <TripForm onSubmit={handlePlanTrip} loading={loading} hasResults={!!tripData} />
-
-          {error && (
-            <div style={{ marginTop: '12px', padding: '10px 13px', background: 'rgba(255,82,82,0.1)', border: '1px solid rgba(255,82,82,0.3)', borderRadius: '8px', fontSize: '13px', color: '#ff8a80' }}>
-              {error}
-            </div>
-          )}
-
-          {tripData && (
-            <div style={{ marginTop: '20px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', marginBottom: '10px', fontFamily: 'var(--font-display)' }}>LAST TRIP SUMMARY</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                {[
-                  { label: 'Distance',   value: `${tripData.trip_plan.total_miles} mi`,         color: 'var(--accent)'  },
-                  { label: 'Days',       value: `${tripData.trip_plan.total_days} days`,         color: 'var(--accent3)' },
-                  { label: 'Drive time', value: `${tripData.trip_plan.total_driving_hours} hrs`, color: 'var(--accent2)' },
-                  { label: 'ETA',        value: formatTime(tripData.trip_plan.estimated_arrival),color: 'var(--text)'    },
-                ].map((item, i) => (
-                  <div key={i} style={{ background: 'var(--navy-card)', border: '1px solid var(--navy-border)', borderRadius: '10px', padding: '12px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>{item.label}</div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '16px', color: item.color }}>{item.value}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: '8px', background: 'var(--navy-card)', border: '1px solid var(--navy-border)', borderRadius: '10px', padding: '11px 14px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                🏁 Estimated arrival:&nbsp;
-                <span style={{ color: 'var(--text)', fontWeight: 600 }}>{formatFullDateTime(tripData.trip_plan.estimated_arrival)}</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* RESULTS PANEL */}
-        <div style={{ flex: 1, display: tripData ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden' }}>
-
-          {/* Tab content — all three kept mounted, toggled via display:none to preserve scroll */}
-          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-            {/* MAP */}
-            <div style={{ position: 'absolute', inset: 0, display: activeTab === 'map' ? 'block' : 'none' }}>
-              {tripData && (
-                <TripMap coordinates={tripData.coordinates} routeGeometry={tripData.route_geometry} stops={tripData.trip_plan.stops} />
+        {/* CONTENT */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Before Trip - Show form only */}
+          {!tripData && (
+            <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+              <TripForm onSubmit={handlePlanTrip} loading={loading} hasResults={!!tripData} formData={formData} setFormData={setFormData} />
+              {error && (
+                <div style={{ marginTop: '12px', padding: '10px 13px', background: 'rgba(255,82,82,0.1)', border: '1px solid rgba(255,82,82,0.3)', borderRadius: '8px', fontSize: '13px', color: '#ff8a80' }}>
+                  {error}
+                </div>
               )}
             </div>
-            {/* STOPS */}
-            {tripData && (
-              <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', background: 'var(--navy)', padding: '20px 16px', display: activeTab === 'stops' ? 'block' : 'none' }}>
-                <StopsList stops={tripData.trip_plan.stops} days={tripData.trip_plan.days} />
-              </div>
-            )}
-            {/* LOGS */}
-            {tripData && (
-              <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', background: 'var(--navy)', padding: '20px 16px', display: activeTab === 'logs' ? 'block' : 'none' }}>
-                <LogSheet
-                  days={tripData.trip_plan.days}
-                  tripInfo={{
-                    from: tripData.coordinates?.current?.display_name || '',
-                    to:   tripData.coordinates?.dropoff?.display_name || '',
-                    totalMiles: tripData.trip_plan.total_miles,
-                  }}
-                />
-              </div>
-            )}
-          </div>
+          )}
 
-          {/* Bottom tab bar */}
-          <div style={{ display: 'flex', gap: '3px', padding: '10px 12px', background: 'var(--navy-light)', borderTop: '1px solid var(--navy-border)', flexShrink: 0 }}>
-            {tabs.map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                style={{ flex: 1, padding: '10px 4px', borderRadius: '7px', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: '12px', background: activeTab === tab.key ? 'var(--accent)' : 'var(--navy-card)', color: activeTab === tab.key ? '#151f2e' : 'var(--text-muted)', transition: 'all 0.2s' }}
-              >{tab.label}</button>
-            ))}
-          </div>
+          {/* After Trip - Show tabs */}
+          {tripData && (
+            <>
+              {/* Tab Content Area */}
+              <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                {/* HOME - Form & Summary */}
+                <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', background: 'var(--navy)', padding: '16px', display: activeTab === 'home' ? 'block' : 'none' }}>
+                  <TripForm onSubmit={handlePlanTrip} loading={loading} hasResults={!!tripData} formData={formData} setFormData={setFormData} />
+                  {error && (
+                    <div style={{ marginTop: '12px', padding: '10px 13px', background: 'rgba(255,82,82,0.1)', border: '1px solid rgba(255,82,82,0.3)', borderRadius: '8px', fontSize: '13px', color: '#ff8a80' }}>
+                      {error}
+                    </div>
+                  )}
+                </div>
+
+                {/* MAP */}
+                <div style={{ position: 'absolute', inset: 0, display: activeTab === 'map' ? 'block' : 'none', overflow: 'hidden' }}>
+                  {tripData && (
+                    <div style={{ height: '100%', width: '100%' }}>
+                      <TripMap coordinates={tripData.coordinates} routeGeometry={tripData.route_geometry} stops={tripData.trip_plan.stops} isVisible={activeTab === 'map'} />
+                    </div>
+                  )}
+                </div>
+
+                {/* STOPS */}
+                <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', background: 'var(--navy)', padding: '16px', display: activeTab === 'stops' ? 'block' : 'none' }}>
+                  <StopsList stops={tripData.trip_plan.stops} days={tripData.trip_plan.days} />
+                </div>
+
+                {/* LOGS */}
+                <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', background: 'var(--navy)', padding: '16px', display: activeTab === 'logs' ? 'block' : 'none' }}>
+                  <LogSheet days={tripData.trip_plan.days} tripInfo={{ from: tripData.coordinates?.current?.display_name || '', to: tripData.coordinates?.dropoff?.display_name || '', totalMiles: tripData.trip_plan.total_miles }} />
+                </div>
+              </div>
+
+              {/* Tab Navigation */}
+              <div style={{ display: 'flex', gap: '8px', padding: '12px', background: 'var(--navy-light)', borderTop: '1px solid var(--navy-border)', flexShrink: 0 }}>
+                {tabs.map(tab => (
+                  <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: '12px', background: activeTab === tab.key ? 'var(--accent)' : 'var(--navy-card)', color: activeTab === tab.key ? '#151f2e' : 'var(--text-muted)', transition: 'all 0.2s ease' }}>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Loading overlay */}
+        {/* Loading Overlay */}
         {loading && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(13,20,31,0.92)' }}>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
@@ -211,7 +203,7 @@ export default function App() {
         </div>
 
         <div style={{ padding: '20px 22px', flex: 1 }}>
-          <TripForm onSubmit={handlePlanTrip} loading={loading} hasResults={!!tripData} />
+          <TripForm onSubmit={handlePlanTrip} loading={loading} hasResults={!!tripData} formData={formData} setFormData={setFormData} />
 
           {error && (
             <div style={{ marginTop: '14px', padding: '11px 14px', background: 'rgba(255,82,82,0.1)', border: '1px solid rgba(255,82,82,0.3)', borderRadius: '8px', fontSize: '13px', color: '#ff8a80' }}>
@@ -286,7 +278,7 @@ export default function App() {
         {/* MAP — always mounted, toggled via opacity/pointerEvents */}
         <div style={{ position: 'absolute', inset: 0, opacity: tripData && activeTab === 'map' ? 1 : 0, pointerEvents: tripData && activeTab === 'map' ? 'all' : 'none', transition: 'opacity 0.3s' }}>
           {tripData && (
-            <TripMap coordinates={tripData.coordinates} routeGeometry={tripData.route_geometry} stops={tripData.trip_plan.stops} />
+            <TripMap coordinates={tripData.coordinates} routeGeometry={tripData.route_geometry} stops={tripData.trip_plan.stops} isVisible={activeTab === 'map'} />
           )}
         </div>
 
