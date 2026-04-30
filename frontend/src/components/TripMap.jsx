@@ -90,6 +90,7 @@ const LEGEND = [
   { emoji: '⛽', label: 'Fuel stop (every 1000 mi)' },
 ]
 
+/* Map rendering and viewport behavior */
 export default function TripMap({ coordinates, routeGeometry, stops, isVisible = true }) {
   const leg1 = useMemo(() => routeGeometry?.leg1 ? decodePoly(routeGeometry.leg1) : [], [routeGeometry?.leg1])
   const leg2 = useMemo(() => routeGeometry?.leg2 ? decodePoly(routeGeometry.leg2) : [], [routeGeometry?.leg2])

@@ -37,6 +37,7 @@ function formatFullDateTime(dt) {
   )
 }
 
+/* App orchestration and API call flow */
 export default function App() {
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)

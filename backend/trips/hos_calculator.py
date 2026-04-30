@@ -223,7 +223,7 @@ def save_day(days, day_number, day_date, day_midnight, raw_events,
 
 
 # Main trip planner 
-
+# Core HOS plannning engine 
 def plan_trip(current_location, pickup_location, dropoff_location,
               cycle_used_hours, route_data, start_time_str=None):
     """

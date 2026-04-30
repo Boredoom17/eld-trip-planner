@@ -57,6 +57,7 @@ function shortCity(full) {
   return abbr ? `${city}, ${abbr}` : city
 }
 
+/* Canvas-based ELD log generation */
 function drawSheet(canvas, day, tripInfo) {
   const ctx = canvas.getContext('2d')
   const W   = canvas.width   // 1400
@@ -465,7 +466,7 @@ function LogPage({ day, tripInfo, onCanvas }) {
     </div>
   )
 }
-
+/* PDF generation */
 async function downloadAsPDF(canvasRefs, days) {
   if (!window.jspdf) {
     await new Promise((resolve, reject) => {
@@ -488,6 +489,7 @@ async function downloadAsPDF(canvasRefs, days) {
   pdf.save(`ELD-Log-${days.length}-Days.pdf`)
 }
 
+/* renders ELD log sheets on canvas and exports to pdf*/
 export default function LogSheet({ days, tripInfo }) {
   const canvasRefs = useRef([])
   canvasRefs.current = []

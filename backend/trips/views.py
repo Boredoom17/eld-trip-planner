@@ -158,7 +158,7 @@ def get_coordinates(place_name):
     except Exception:
         return None
 
-
+# Routing + fuel stop coordinate  interpolation 
 def get_route(coord1, coord2, api_key):
     """
     Gets real road distance between two coordinates using OpenRouteService.
@@ -220,6 +220,7 @@ def coords_too_close(c1, c2):
 
 
 @api_view(['POST'])
+# Main endpoint and validation form 
 def plan_trip_view(request):
     """
     Main endpoint. React sends trip details, we return the full HOS plan.

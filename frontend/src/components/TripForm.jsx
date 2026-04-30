@@ -117,6 +117,7 @@ function LocationInput({ id, label, value, onChange, placeholder, icon }) {
   )
 }
 
+/* Form with location autocomplete and cycle slider */
 export default function TripForm({ onSubmit, loading, hasResults, formData, setFormData }) {
   const pct         = (formData.cycle_used_hours / 70) * 100
   const sliderColor = pct > 85 ? '#ff5252' : pct > 60 ? '#ffab40' : 'var(--accent)'

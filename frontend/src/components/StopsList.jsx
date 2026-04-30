@@ -221,7 +221,7 @@ function DaySummary({ grid }) {
     </div>
   )
 }
-
+/* Timeline/stop composition */
 export default function StopsList({ stops, days }) {
   if (!stops?.length || !days?.length) return null
 
