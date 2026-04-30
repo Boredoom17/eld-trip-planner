@@ -51,7 +51,8 @@ Built with a custom HOS calculator engine that handles all FMCSA regulations: dr
 
 ### Deploy
 - **Vercel** — Frontend hosting
-- **Railway** — Backend hosting
+- **Railway** — Backend hosting (option)
+- **Render** — Backend hosting (option, free tier supported)
 
 ## 🎯 How It Works
 
